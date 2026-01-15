@@ -70,6 +70,9 @@ class EmailPollingTrigger:
 
     async def _check_new_emails(self) -> None:
         """Check for new unread emails since last check."""
+        # Capture check time at start to avoid missing emails that arrive during processing
+        check_start_time = datetime.now(timezone.utc)
+
         # Convert to Unix timestamp for Gmail query
         timestamp = int(self.last_check.timestamp())
         query = f"is:unread after:{timestamp}"
@@ -104,10 +107,11 @@ class EmailPollingTrigger:
                     await self._handle_new_email(full_msg)
 
             except Exception as e:
-                logger.error(f"Error processing email {msg['id']}: {e}")
+                logger.exception(f"Error processing email {msg['id']}: {e}")
 
-        # Update last check time
-        self.last_check = datetime.now(timezone.utc)
+        # Update last check time to when we started this check
+        # This ensures emails arriving during processing are caught next poll
+        self.last_check = check_start_time
 
     async def _handle_new_email(self, message: dict) -> None:
         """Handle a new email by triggering the callback."""

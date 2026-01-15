@@ -486,14 +486,35 @@ async def _resume_agent(
         return
 
     elif decision == "edit" and new_args:
-        # Update tool call args and execute
-        # This requires modifying the state - for now, we'll just approve with a note
-        from langchain_core.messages import ToolMessage
+        # Update the tool call args in state before resuming
+        from langchain_core.messages import AIMessage
 
-        agent.update_state(
-            config,
-            {"messages": [ToolMessage(content=f"User edited args to: {json.dumps(new_args)}", tool_call_id=tool_call_id)]},
-        )
+        state = agent.get_state(config)
+        messages = state.values.get("messages", [])
+
+        # Find and update the AIMessage with this tool call
+        updated_messages = []
+        for msg in messages:
+            if hasattr(msg, "tool_calls") and msg.tool_calls:
+                updated_tool_calls = []
+                for tc in msg.tool_calls:
+                    if tc["id"] == tool_call_id:
+                        # Update args with edited values
+                        updated_tool_calls.append({**tc, "args": new_args})
+                    else:
+                        updated_tool_calls.append(tc)
+                # Create new AIMessage with updated tool calls
+                updated_msg = AIMessage(
+                    content=msg.content,
+                    tool_calls=updated_tool_calls,
+                    id=msg.id,
+                )
+                updated_messages.append(updated_msg)
+            else:
+                updated_messages.append(msg)
+
+        # Update state with modified messages
+        agent.update_state(config, {"messages": updated_messages})
 
     # Resume with None input to continue from interrupt
     async for event in agent.astream_events(None, config, version="v2"):
