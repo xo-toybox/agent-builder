@@ -2,7 +2,7 @@ import { useState, useEffect, useRef, useCallback } from 'react';
 import type { Message, HITLInterrupt, WSMessageType } from '../types';
 
 // Stable URL to avoid useCallback recreation
-const WS_URL = `ws://${window.location.host}/ws/chat`;
+const WS_URL = `${window.location.protocol === 'https:' ? 'wss:' : 'ws:'}//${window.location.host}/ws/chat`;
 
 export function useWebSocket(_url?: string) {
   const url = _url || WS_URL;
@@ -48,7 +48,13 @@ export function useWebSocket(_url?: string) {
     };
 
     ws.onmessage = (event) => {
-      const data: WSMessageType = JSON.parse(event.data);
+      let data: WSMessageType;
+      try {
+        data = JSON.parse(event.data);
+      } catch (e) {
+        console.error('Failed to parse WebSocket message:', e);
+        return;
+      }
 
       switch (data.type) {
         case 'token':

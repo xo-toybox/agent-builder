@@ -17,7 +17,6 @@ function App() {
     isAuthenticated,
     userEmail,
     loading,
-    updateAgent,
     toggleHITL,
     toggleTrigger,
     login,
@@ -90,7 +89,6 @@ function App() {
             subagents={subagents}
             onToggleTrigger={toggleTrigger}
             onToggleHITL={toggleHITL}
-            onUpdateAgent={updateAgent}
           />
         </div>
       </div>

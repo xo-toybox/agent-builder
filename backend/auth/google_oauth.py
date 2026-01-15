@@ -82,7 +82,6 @@ def _save_credentials(credentials: Credentials) -> None:
                 "refresh_token": credentials.refresh_token,
                 "token_uri": credentials.token_uri,
                 "client_id": credentials.client_id,
-                "client_secret": credentials.client_secret,
                 "scopes": list(credentials.scopes) if credentials.scopes else SCOPES,
             }
         )
@@ -108,8 +107,12 @@ def get_credentials() -> Credentials | None:
     if credentials.expired and credentials.refresh_token:
         from google.auth.transport.requests import Request
 
-        credentials.refresh(Request())
-        _save_credentials(credentials)
+        try:
+            credentials.refresh(Request())
+            _save_credentials(credentials)
+        except Exception:
+            logger.exception("Failed to refresh credentials")
+            return None
 
     return credentials
 

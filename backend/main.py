@@ -324,11 +324,8 @@ async def websocket_chat(websocket: WebSocket):
             return
 
         # Create agent
-        agent, checkpointer = create_email_agent(credentials)
+        agent, _checkpointer = create_email_agent(credentials)
         config = {"configurable": {"thread_id": thread_id}}
-
-        # Track pending HITL interrupts
-        pending_interrupt: dict | None = None
 
         while True:
             data = await websocket.receive_text()
@@ -344,7 +341,6 @@ async def websocket_chat(websocket: WebSocket):
                         config,
                         user_content,
                         websocket,
-                        lambda interrupt: _set_pending(interrupt, pending_interrupt),
                     )
                 except Exception as e:
                     logger.error(f"Agent error: {e}")
@@ -381,17 +377,11 @@ async def websocket_chat(websocket: WebSocket):
         active_connections.pop(connection_id, None)
 
 
-def _set_pending(interrupt: dict | None, pending: dict | None):
-    """Helper to set pending interrupt."""
-    pending = interrupt
-
-
 async def _run_agent(
     agent,
     config: dict,
     user_content: str,
     websocket: WebSocket,
-    on_interrupt=None,
 ):
     """Run the agent and stream results to WebSocket."""
     input_messages = {
@@ -464,12 +454,6 @@ async def _run_agent(
                         "name": tool_call["name"],
                         "args": tool_call["args"],
                     })
-                    if on_interrupt:
-                        on_interrupt({
-                            "tool_call_id": tool_call["id"],
-                            "name": tool_call["name"],
-                            "args": tool_call["args"],
-                        })
                     return
 
     # Agent completed

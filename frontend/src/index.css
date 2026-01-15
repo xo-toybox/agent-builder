@@ -42,7 +42,8 @@ textarea {
 }
 
 textarea:focus {
-  outline: none;
+  outline: 2px solid var(--accent-teal, #14b8a6);
+  outline-offset: -2px;
 }
 
 /* Dashed connection lines */

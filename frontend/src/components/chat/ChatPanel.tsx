@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import type { Message, HITLInterrupt } from '../../types';
 
 interface ChatPanelProps {
@@ -196,15 +196,24 @@ function HITLApprovalInline({
 }) {
   const [editing, setEditing] = useState(false);
   const [editedArgs, setEditedArgs] = useState(JSON.stringify(interrupt.args, null, 2));
+  const [parseError, setParseError] = useState<string | null>(null);
+
+  // Reset state when interrupt changes
+  useEffect(() => {
+    setEditedArgs(JSON.stringify(interrupt.args, null, 2));
+    setEditing(false);
+    setParseError(null);
+  }, [interrupt.tool_call_id, interrupt.args]);
 
   const handleApprove = () => onDecision('approve', interrupt.tool_call_id);
   const handleReject = () => onDecision('reject', interrupt.tool_call_id);
   const handleConfirmEdit = () => {
     try {
       const parsed = JSON.parse(editedArgs);
+      setParseError(null);
       onDecision('edit', interrupt.tool_call_id, parsed);
     } catch {
-      // Invalid JSON
+      setParseError('Invalid JSON format');
     }
   };
 
@@ -218,12 +227,18 @@ function HITLApprovalInline({
       </div>
 
       {editing ? (
-        <textarea
-          value={editedArgs}
-          onChange={(e) => setEditedArgs(e.target.value)}
-          rows={6}
-          className="w-full px-3 py-2 bg-bg-secondary border border-border rounded-md text-text-primary text-sm font-mono mb-3"
-        />
+        <div className="mb-3">
+          <textarea
+            value={editedArgs}
+            onChange={(e) => {
+              setEditedArgs(e.target.value);
+              setParseError(null);
+            }}
+            rows={6}
+            className="w-full px-3 py-2 bg-bg-secondary border border-border rounded-md text-text-primary text-sm font-mono"
+          />
+          {parseError && <p className="text-accent-red text-xs mt-1">{parseError}</p>}
+        </div>
       ) : (
         <pre className="bg-bg-secondary border border-border rounded-md p-3 text-sm text-text-secondary overflow-x-auto mb-3">
           {JSON.stringify(interrupt.args, null, 2)}

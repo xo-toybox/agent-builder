@@ -47,7 +47,7 @@ In handling emails, you have access to the following tools
 
 ### Calendar Tools
 
-- google_calendar_list_events_for_date: Check the user's calendar for a specific date (format: 'dd-mm-yyyy') to see availability or existing events
+- google_calendar_list_events_for_date: Check the user's calendar for a specific date (format: 'YYYY-MM-DD') to see availability or existing events
 - google_calendar_get_event: Get detailed information about a specific calendar event by event ID
 - google_calendar_create_event: Create a new calendar event with meeting invite (requires human approval before creating)
 

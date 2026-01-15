@@ -9,7 +9,6 @@ interface CanvasProps {
   subagents: Subagent[];
   onToggleTrigger: (triggerId: string) => void;
   onToggleHITL: (toolName: string, enabled: boolean) => void;
-  onUpdateAgent: (updates: { name?: string; instructions?: string }) => void;
 }
 
 export function Canvas({

@@ -21,7 +21,7 @@ export function ToolboxPanel({ tools, onToggleHITL }: ToolboxPanelProps) {
         {tools.map((tool) => (
           <div
             key={tool.name}
-            className="flex items-center justify-between py-2 px-3 rounded-md hover:bg-bg-tertiary transition-colors"
+            className="group flex items-center justify-between py-2 px-3 rounded-md hover:bg-bg-tertiary transition-colors"
           >
             <div className="flex items-center gap-3">
               <input

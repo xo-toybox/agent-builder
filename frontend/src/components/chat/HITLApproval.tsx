@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 
 interface HITLApprovalProps {
   toolCallId: string;
@@ -20,6 +20,13 @@ export function HITLApproval({
   const [editing, setEditing] = useState(false);
   const [editedArgs, setEditedArgs] = useState(JSON.stringify(args, null, 2));
   const [error, setError] = useState<string | null>(null);
+
+  // Reset state when toolCallId changes
+  useEffect(() => {
+    setEditedArgs(JSON.stringify(args, null, 2));
+    setEditing(false);
+    setError(null);
+  }, [toolCallId, args]);
 
   const handleApprove = () => {
     onDecision('approve', toolCallId);

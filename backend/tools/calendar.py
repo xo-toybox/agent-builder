@@ -1,8 +1,9 @@
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 from typing import Any
 
 from google.oauth2.credentials import Credentials
 from googleapiclient.discovery import build
+from googleapiclient.errors import HttpError
 from langchain_core.tools import tool
 from pydantic import BaseModel, Field
 
@@ -59,13 +60,14 @@ def create_calendar_tools(credentials: Credentials) -> list:
         """List calendar events for a date range."""
         try:
             start_date = datetime.strptime(date, "%Y-%m-%d")
+            start_date = start_date.replace(tzinfo=timezone.utc)
         except ValueError:
             return [{"error": f"Invalid date format: {date}. Use YYYY-MM-DD."}]
 
         end_date = start_date + timedelta(days=days)
 
-        time_min = start_date.isoformat() + "Z"
-        time_max = end_date.isoformat() + "Z"
+        time_min = start_date.isoformat()
+        time_max = end_date.isoformat()
 
         events_result = (
             service.events()
@@ -87,7 +89,10 @@ def create_calendar_tools(credentials: Credentials) -> list:
         event_id: str = Field(description="The ID of the calendar event to retrieve"),
     ) -> dict[str, Any]:
         """Get detailed information about a specific calendar event."""
-        event = service.events().get(calendarId="primary", eventId=event_id).execute()
-        return _parse_event(event).model_dump()
+        try:
+            event = service.events().get(calendarId="primary", eventId=event_id).execute()
+            return _parse_event(event).model_dump()
+        except HttpError as e:
+            return {"error": f"Failed to get event: {e.reason}"}
 
     return [list_events, get_event]
