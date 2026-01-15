@@ -329,7 +329,11 @@ async def websocket_chat(websocket: WebSocket):
 
         while True:
             data = await websocket.receive_text()
-            message = json.loads(data)
+            try:
+                message = json.loads(data)
+            except json.JSONDecodeError as e:
+                await websocket.send_json({"type": "error", "message": f"Invalid JSON: {e}"})
+                continue
 
             if message["type"] == "message":
                 # User sent a chat message
