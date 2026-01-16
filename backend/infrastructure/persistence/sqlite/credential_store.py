@@ -1,12 +1,15 @@
 """SQLite implementation of CredentialStore with encryption."""
 
 import json
+import logging
 from datetime import datetime
 from cryptography.fernet import Fernet
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from backend.config import settings
 from backend.infrastructure.persistence.sqlite.models import CredentialModel
+
+logger = logging.getLogger(__name__)
 
 
 class SQLiteCredentialStore:
@@ -23,6 +26,10 @@ class SQLiteCredentialStore:
             self._fernet = Fernet(settings.encryption_key.encode())
         else:
             self._fernet = None
+            logger.warning(
+                "ENCRYPTION_KEY not set - credentials will be stored unencrypted. "
+                "This is insecure and should only be used in development."
+            )
 
     def _encrypt(self, data: dict) -> str:
         """Encrypt credential data."""

@@ -32,13 +32,13 @@ class ToolRegistryImpl:
     async def create_tools(
         self,
         configs: list[ToolConfig],
-        credentials: Credentials
+        credentials: Credentials | None
     ) -> list[Any]:
         """Create executable tools from configurations.
 
         Args:
             configs: List of tool configurations
-            credentials: Google OAuth credentials for built-in tools
+            credentials: Google OAuth credentials for built-in tools (optional)
 
         Returns:
             List of LangChain-compatible tools
@@ -50,6 +50,9 @@ class ToolRegistryImpl:
                 continue
 
             if config.source == ToolSource.BUILTIN:
+                # Skip built-in tools if no credentials available
+                if credentials is None:
+                    continue
                 tool = self.builtin_factory.get_tool_by_name(config.name, credentials)
                 if tool:
                     tools.append(tool)
@@ -123,13 +126,19 @@ class ToolRegistryImpl:
             configs: List of tool configurations
 
         Returns:
-            List of tool names with hitl_enabled=True
+            List of tool names with hitl_enabled=True (with correct prefixes)
         """
-        return [
-            config.name
-            for config in configs
-            if config.hitl_enabled
-        ]
+        hitl_tools = []
+        for config in configs:
+            if not config.hitl_enabled:
+                continue
+            if config.source == ToolSource.MCP and config.server_id:
+                # MCP tools are prefixed with mcp_{server_id}_{tool_name}
+                hitl_tools.append(f"mcp_{config.server_id}_{config.name}")
+            else:
+                # Built-in tools use their plain name
+                hitl_tools.append(config.name)
+        return hitl_tools
 
     async def cleanup(self):
         """Clean up resources (disconnect MCP servers)."""

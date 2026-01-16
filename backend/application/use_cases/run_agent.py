@@ -6,6 +6,7 @@ from langgraph.checkpoint.memory import MemorySaver
 from deepagents import create_deep_agent
 
 from backend.domain.ports import AgentRepository, CredentialStore
+from backend.domain.entities import ToolSource
 from backend.domain.exceptions import AgentNotFoundError, CredentialNotFoundError
 from backend.infrastructure.tools.registry import ToolRegistryImpl
 
@@ -62,18 +63,25 @@ class RunAgentUseCase:
         if not agent_def:
             raise AgentNotFoundError(agent_id)
 
-        # Get credentials
-        creds_dict = await self.credential_store.get("google")
-        if not creds_dict:
-            raise CredentialNotFoundError("google")
-
-        credentials = Credentials(
-            token=creds_dict.get("token"),
-            refresh_token=creds_dict.get("refresh_token"),
-            token_uri=creds_dict.get("token_uri"),
-            client_id=creds_dict.get("client_id"),
-            client_secret=creds_dict.get("client_secret"),
+        # Check if agent needs Google credentials (only for built-in tools)
+        needs_google = any(
+            t.enabled and t.source == ToolSource.BUILTIN
+            for t in agent_def.tools
         )
+
+        credentials = None
+        if needs_google:
+            creds_dict = await self.credential_store.get("google")
+            if not creds_dict:
+                raise CredentialNotFoundError("google")
+
+            credentials = Credentials(
+                token=creds_dict.get("token"),
+                refresh_token=creds_dict.get("refresh_token"),
+                token_uri=creds_dict.get("token_uri"),
+                client_id=creds_dict.get("client_id"),
+                client_secret=creds_dict.get("client_secret"),
+            )
 
         # Create tools
         tools = await self.tool_registry.create_tools(agent_def.tools, credentials)

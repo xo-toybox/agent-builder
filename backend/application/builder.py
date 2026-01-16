@@ -268,6 +268,9 @@ class BuilderWizard:
 
         # Handle tool calls
         if response.tool_calls:
+            # Add the AI response with tool_calls to history BEFORE tool results
+            self.conversation_state[thread_id].append(response)
+
             for tool_call in response.tool_calls:
                 # Find and execute tool
                 tool_fn = next((t for t in self.tools if t.name == tool_call["name"]), None)

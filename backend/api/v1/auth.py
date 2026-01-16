@@ -31,15 +31,30 @@ async def auth_login():
 
 
 @router.get("/callback")
-async def auth_callback(code: str):
+async def auth_callback(
+    code: str,
+    credential_store=Depends(get_credential_store),
+):
     """Handle OAuth callback."""
     try:
         redirect_uri = f"http://localhost:{settings.port}/api/v1/auth/callback"
         exchange_code(code, redirect_uri=redirect_uri)
+
+        # Persist credentials to SQLite for v1 chat stack
+        credentials = get_credentials()
+        if credentials:
+            await credential_store.save("google", {
+                "token": credentials.token,
+                "refresh_token": credentials.refresh_token,
+                "token_uri": credentials.token_uri,
+                "client_id": credentials.client_id,
+                "client_secret": credentials.client_secret,
+            })
+
         return RedirectResponse(url=settings.frontend_url)
     except Exception as e:
-        logger.error(f"OAuth callback error: {e}")
-        raise HTTPException(status_code=400, detail=str(e))
+        logger.exception("OAuth callback error")
+        raise HTTPException(status_code=400, detail="OAuth authentication failed")
 
 
 @router.get("/status")

@@ -27,14 +27,16 @@ export function AgentList({
     if (!selectedTemplate || !newName.trim()) return;
 
     setIsCloning(true);
-    const newId = await onCloneTemplate(selectedTemplate.id, newName.trim());
-    setIsCloning(false);
-
-    if (newId) {
-      setCloneDialogOpen(false);
-      setNewName('');
-      setSelectedTemplate(null);
-      onSelectAgent(newId);
+    try {
+      const newId = await onCloneTemplate(selectedTemplate.id, newName.trim());
+      if (newId) {
+        setCloneDialogOpen(false);
+        setNewName('');
+        setSelectedTemplate(null);
+        onSelectAgent(newId);
+      }
+    } finally {
+      setIsCloning(false);
     }
   };
 

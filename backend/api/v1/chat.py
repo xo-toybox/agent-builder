@@ -67,11 +67,11 @@ async def agent_chat(
                         "type": "error",
                         "message": "Not authenticated. Please login first."
                     })
-                except Exception as e:
-                    logger.error(f"Agent error: {e}")
+                except Exception:
+                    logger.exception("Agent error")
                     await websocket.send_json({
                         "type": "error",
-                        "message": str(e)
+                        "message": "Agent execution failed. Please retry."
                     })
 
             elif message.get("type") == "hitl_decision":
@@ -89,11 +89,11 @@ async def agent_chat(
                         new_args,
                         websocket,
                     )
-                except Exception as e:
-                    logger.error(f"Resume error: {e}")
+                except Exception:
+                    logger.exception("Resume error")
                     await websocket.send_json({
                         "type": "error",
-                        "message": str(e)
+                        "message": "Agent resume failed. Please retry."
                     })
 
     except WebSocketDisconnect:

@@ -76,7 +76,14 @@ class SQLiteHITLRepository:
 
         if model:
             model.decision = decision
-            model.status = decision if decision in ("approved", "rejected") else "edited"
+            # Map decision enum values to status strings
+            # HITLDecision values: approve, reject, edit
+            status_map = {
+                "approve": "approved",
+                "reject": "rejected",
+                "edit": "edited",
+            }
+            model.status = status_map.get(decision, "edited")
             model.edited_args = edited_args
             model.resolved_at = datetime.utcnow()
             await self.session.commit()

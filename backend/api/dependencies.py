@@ -88,17 +88,22 @@ class TriggerManagerStub:
     """
 
     def __init__(self):
-        self._running: dict[str, bool] = {}
+        # Maps trigger_id -> agent_id
+        self._running: dict[str, str] = {}
 
     async def start(self, agent_id: str, trigger_id: str) -> None:
-        self._running[trigger_id] = True
+        self._running[trigger_id] = agent_id
 
     async def stop(self, trigger_id: str) -> None:
         self._running.pop(trigger_id, None)
 
     async def stop_all(self, agent_id: str) -> None:
-        # TODO: Filter by agent_id
-        self._running.clear()
+        # Filter and remove only triggers for this agent
+        triggers_to_remove = [
+            tid for tid, aid in self._running.items() if aid == agent_id
+        ]
+        for tid in triggers_to_remove:
+            del self._running[tid]
 
     def list_running(self) -> list[str]:
         return list(self._running.keys())
