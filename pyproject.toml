@@ -1,7 +1,7 @@
 [project]
 name = "agent-builder"
-version = "0.0.1"
-description = "Email assistant agent builder with human-in-the-loop approval"
+version = "0.0.2"
+description = "Generic agent builder platform with chat-based creation, MCP tools, and HITL approval"
 readme = "README.md"
 requires-python = ">=3.12"
 dependencies = [
@@ -15,6 +15,10 @@ dependencies = [
     "google-auth-httplib2>=0.2.0",
     "pydantic-settings>=2.6.0",
     "python-multipart>=0.0.12",
+    # v0.0.2 additions
+    "sqlalchemy>=2.0.0",
+    "aiosqlite>=0.20.0",
+    "cryptography>=42.0.0",
 ]
 
 [project.scripts]
@@ -24,4 +28,14 @@ agent-builder = "backend.main:run"
 dev-dependencies = [
     "pytest>=8.0.0",
     "pytest-asyncio>=0.24.0",
+    "httpx>=0.27.0",
+    "greenlet>=3.0.0",
 ]
+
+[tool.pytest.ini_options]
+asyncio_mode = "auto"
+asyncio_default_fixture_loop_scope = "function"
+testpaths = ["tests"]
+python_files = ["test_*.py"]
+python_classes = ["Test*"]
+python_functions = ["test_*"]

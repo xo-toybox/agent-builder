@@ -3,18 +3,33 @@ interface HeaderProps {
   agentDescription: string;
   chatVisible: boolean;
   onToggleChat: () => void;
+  onBack?: () => void;
+  showBackButton?: boolean;
 }
 
-export function Header({ agentName, agentDescription, chatVisible, onToggleChat }: HeaderProps) {
+export function Header({
+  agentName,
+  agentDescription,
+  chatVisible,
+  onToggleChat,
+  onBack,
+  showBackButton = false,
+}: HeaderProps) {
   return (
     <header className="h-14 border-b border-border bg-bg-secondary flex items-center justify-between px-4">
       <div className="flex items-center gap-3">
         {/* Back button */}
-        <button className="p-1.5 hover:bg-bg-tertiary rounded-md text-text-secondary">
-          <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 19l-7-7 7-7" />
-          </svg>
-        </button>
+        {showBackButton && onBack && (
+          <button
+            onClick={onBack}
+            className="p-1.5 hover:bg-bg-tertiary rounded-md text-text-secondary"
+            title="Back to agent list"
+          >
+            <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 19l-7-7 7-7" />
+            </svg>
+          </button>
+        )}
 
         {/* Agent name and status */}
         <div>
