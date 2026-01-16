@@ -364,14 +364,15 @@ class BuilderWizard:
                     full_content += chunk_text
                     yield {"type": "token", "content": chunk_text}
 
-            if full_content:
-                self.conversation_state[thread_id].append(AIMessage(content=full_content))
+            # Always append AIMessage to maintain conversation history
+            self.conversation_state[thread_id].append(AIMessage(content=full_content))
         else:
             # No tool calls - yield the complete response
             content = self._extract_content(response.content)
             if content:
                 yield {"type": "token", "content": content}
-                self.conversation_state[thread_id].append(AIMessage(content=content))
+            # Always append AIMessage to maintain conversation history
+            self.conversation_state[thread_id].append(AIMessage(content=content or ""))
 
         yield {"type": "complete"}
 

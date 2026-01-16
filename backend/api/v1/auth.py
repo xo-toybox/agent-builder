@@ -52,9 +52,9 @@ async def auth_callback(
             })
 
         return RedirectResponse(url=settings.frontend_url)
-    except Exception as e:
+    except Exception:
         logger.exception("OAuth callback error")
-        raise HTTPException(status_code=400, detail="OAuth authentication failed")
+        raise HTTPException(status_code=400, detail="OAuth authentication failed") from None
 
 
 @router.get("/status")
@@ -75,14 +75,19 @@ async def auth_status():
                 "authenticated": True,
                 "email": profile.get("emailAddress"),
             }
-    except Exception as e:
-        logger.error(f"Failed to get user email: {e}")
+    except Exception:
+        logger.exception("Failed to get user email")
 
     return {"authenticated": authenticated, "email": None}
 
 
 @router.post("/logout")
-async def auth_logout():
-    """Clear stored credentials."""
+async def auth_logout(credential_store=Depends(get_credential_store)):
+    """Clear stored credentials from both file and SQLite."""
     clear_credentials()
+    # Also clear SQLite-stored credentials
+    try:
+        await credential_store.delete("google")
+    except Exception:
+        logger.exception("Failed to clear SQLite credentials")
     return {"success": True}
