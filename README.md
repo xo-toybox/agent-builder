@@ -1,15 +1,20 @@
 # Agent Builder
 
-A web-based email assistant agent builder with human-in-the-loop approval for sensitive actions.
+A generic agent builder platform that can create any AI agent through natural language conversation. Build, configure, and deploy AI agents with flexible tools, triggers, and human-in-the-loop approval flows.
 
-## Features
+## v0.0.2 - Generic Agent Builder
 
-- **Email Assistant Agent**: Triages inbox, drafts replies, sends emails with HITL approval
-- **Gmail Integration**: Full OAuth flow with list, search, draft, send, and label operations
-- **Calendar Integration**: Check availability via calendar_context subagent
-- **Email Polling Trigger**: Polls for new emails at configurable intervals
-- **Human-in-the-Loop**: Approve, edit, or reject sensitive tool calls (draft_reply, send_email)
-- **Dark Theme UI**: React-based editor matching LangSmith Agent Builder design
+This version transforms Agent Builder from a hardcoded email assistant (v0.0.1) into a platform that can generate any agent type.
+
+### Key Features
+
+- **Chat-based Agent Creation** - Describe what you want, AI builds the agent
+- **Multiple Agents** - Create and manage multiple independent agents
+- **Flexible Tools** - Built-in Gmail/Calendar tools + MCP server integration
+- **Configurable Triggers** - Email polling, webhooks, scheduled runs
+- **HITL Approvals** - Human approval for sensitive actions
+- **Templates** - Clone pre-built templates like the Email Assistant
+- **SQLite Persistence** - Reliable storage replacing JSON files
 
 ## Quick Start
 
@@ -39,7 +44,10 @@ cd frontend && npm install && cd ..
 
 ```bash
 cp .env.example .env
-# Edit .env with your credentials
+# Edit .env with your credentials:
+# - ANTHROPIC_API_KEY
+# - GOOGLE_CLIENT_ID
+# - GOOGLE_CLIENT_SECRET
 ```
 
 3. **Google OAuth Setup**
@@ -61,23 +69,36 @@ uv run uvicorn backend.main:app --reload
 cd frontend && npm run dev
 ```
 
-5. **Open browser**
+5. **Open browser**: Navigate to http://localhost:5173
 
-   Navigate to http://localhost:5173
-
-## Architecture
+## Architecture (v0.0.2)
 
 ```
-┌─────────────────────┐     ┌─────────────────────┐
-│   React Frontend    │◄───►│   FastAPI Backend   │
-│   (Vite + Tailwind) │ WS  │   + deepagents      │
-└─────────────────────┘     └─────────────────────┘
-                                     │
-                                     ▼
-                            ┌─────────────────────┐
-                            │   Google APIs       │
-                            │   Gmail + Calendar  │
-                            └─────────────────────┘
+┌─────────────────────────────────────────────────────────────────┐
+│                        Presentation Layer                        │
+│  ┌──────────────┐  ┌──────────────┐  ┌────────────────────────┐ │
+│  │ REST API     │  │ WebSocket    │  │ Builder Wizard         │ │
+│  │ (FastAPI)    │  │ Chat Handler │  │ (Meta-Agent)           │ │
+│  └──────────────┘  └──────────────┘  └────────────────────────┘ │
+└─────────────────────────────────────────────────────────────────┘
+                              │
+                              ▼
+┌─────────────────────────────────────────────────────────────────┐
+│                       Application Layer                          │
+│  Use Cases: CreateAgent, RunAgent, CloneTemplate, ManageTriggers │
+└─────────────────────────────────────────────────────────────────┘
+                              │
+                              ▼
+┌─────────────────────────────────────────────────────────────────┐
+│                         Domain Layer                             │
+│  Entities: Agent, Tool, Trigger, HITL | Ports: Repositories      │
+└─────────────────────────────────────────────────────────────────┘
+                              │
+                              ▼
+┌─────────────────────────────────────────────────────────────────┐
+│                      Infrastructure Layer                        │
+│  SQLite Persistence | MCP Client | Built-in Tools | Triggers     │
+└─────────────────────────────────────────────────────────────────┘
 ```
 
 ## Project Structure
@@ -85,42 +106,67 @@ cd frontend && npm run dev
 ```
 agent-builder/
 ├── backend/
-│   ├── main.py              # FastAPI server + WebSocket
-│   ├── agent.py             # Email assistant agent config
-│   ├── config.py            # Environment settings
-│   ├── persistence.py       # JSON file storage
-│   ├── auth/                # Google OAuth
-│   ├── tools/               # Gmail + Calendar tools
-│   ├── triggers/            # Email polling
-│   └── subagents/           # Calendar context subagent
+│   ├── main.py                      # FastAPI app + legacy routes
+│   ├── config.py                    # Environment settings
+│   ├── domain/                      # Domain Layer (Hexagonal)
+│   │   ├── entities.py              # Agent, Tool, Trigger, HITL
+│   │   ├── ports.py                 # Repository protocols
+│   │   └── services.py              # Service protocols
+│   ├── application/                 # Application Layer
+│   │   ├── use_cases/               # CreateAgent, CloneTemplate, etc.
+│   │   └── builder.py               # Builder Wizard agent
+│   ├── infrastructure/              # Infrastructure Layer
+│   │   ├── persistence/sqlite/      # SQLite repositories
+│   │   ├── tools/                   # Tool registry + MCP client
+│   │   └── templates/               # Agent templates
+│   ├── api/v1/                      # API routes
+│   │   ├── agents.py                # Agent CRUD
+│   │   ├── wizard.py                # Builder wizard chat
+│   │   ├── chat.py                  # Agent chat
+│   │   └── tools.py                 # Tool management
+│   └── migration/                   # Migration scripts
 ├── frontend/
 │   └── src/
-│       ├── App.tsx          # Main application
-│       ├── components/      # React components
-│       ├── hooks/           # useWebSocket, useAgent
-│       └── types/           # TypeScript types
-├── data/                    # Persisted config (gitignored)
-├── docs/                    # Design documents
-└── pyproject.toml
+│       ├── App.tsx                  # Multi-view routing
+│       ├── pages/                   # AgentList, AgentBuilder
+│       ├── hooks/                   # useAgents, useBuilderChat
+│       └── types/                   # TypeScript types
+├── data/                            # SQLite DB (gitignored)
+└── docs/
+    ├── roadmap.md                   # Project roadmap
+    └── v0.0.2-agent-builder/
+        └── design.md                # Full design document
 ```
 
 ## API Endpoints
 
+### v0.0.2 API (`/api/v1/`)
+
 | Method | Path | Description |
 |--------|------|-------------|
-| GET | `/auth/login` | Start Google OAuth flow |
-| GET | `/auth/callback` | OAuth callback |
+| GET | `/api/v1/agents` | List all agents |
+| GET | `/api/v1/agents/templates` | List templates |
+| GET | `/api/v1/agents/{id}` | Get agent details |
+| POST | `/api/v1/agents` | Create new agent |
+| POST | `/api/v1/agents/{id}/clone` | Clone an agent |
+| DELETE | `/api/v1/agents/{id}` | Delete an agent |
+| WS | `/api/v1/wizard/chat` | Builder wizard chat |
+| WS | `/api/v1/chat/{agent_id}` | Chat with agent |
+| GET | `/api/v1/tools/builtin` | List built-in tools |
+| GET | `/api/v1/tools/mcp` | List MCP servers |
+
+### Legacy API (backward compatible)
+
+| Method | Path | Description |
+|--------|------|-------------|
+| GET | `/auth/login` | Start Google OAuth |
 | GET | `/auth/status` | Check auth status |
-| GET | `/api/agent` | Get agent config |
-| PUT | `/api/agent` | Update agent config |
-| GET | `/api/tools` | List available tools |
-| PUT | `/api/tools/{name}/hitl` | Toggle HITL for tool |
-| GET | `/api/triggers` | List triggers |
-| POST | `/api/triggers/{id}/toggle` | Toggle trigger |
-| WS | `/ws/chat` | Chat with agent |
+| GET | `/api/agent` | Get legacy config |
+| WS | `/ws/chat` | Legacy chat endpoint |
 
-## Gmail Tools
+## Built-in Tools
 
+### Gmail Tools
 | Tool | HITL | Description |
 |------|------|-------------|
 | list_emails | No | List inbox emails |
@@ -129,6 +175,29 @@ agent-builder/
 | draft_reply | **Yes** | Create draft reply |
 | send_email | **Yes** | Send email |
 | label_email | No | Modify labels |
+
+### Calendar Tools
+| Tool | HITL | Description |
+|------|------|-------------|
+| list_events | No | List calendar events |
+| get_event | No | Get event details |
+
+## Creating an Agent
+
+1. **From Template**: Clone the Email Assistant template and customize
+2. **Via Builder**: Use the chat-based wizard to describe what you need
+3. **Via API**: POST to `/api/v1/agents` with full configuration
+
+### Builder Example
+
+```
+You: I want an agent that monitors my inbox and summarizes important emails
+
+Builder: I can help you create that! Let me ask a few questions:
+1. What emails should be considered "important"?
+2. Should it send you summaries or just organize them?
+3. Do you want it to run continuously or on-demand?
+```
 
 ## Development
 
@@ -142,3 +211,12 @@ cd frontend && npm run dev
 # Type check frontend
 cd frontend && npm run build
 ```
+
+## Documentation
+
+- [Design Document](docs/v0.0.2-agent-builder/design.md) - Full architecture and implementation details
+- [Roadmap](docs/roadmap.md) - Project roadmap and future plans
+
+## License
+
+MIT
