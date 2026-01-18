@@ -1,6 +1,9 @@
 import type { Tool, Trigger, Subagent } from '../../types';
+import { SkillsPanel } from '../panels/SkillsPanel';
+import { SlackConfigPanel } from '../panels/SlackConfigPanel';
 
 interface CanvasProps {
+  agentId?: string; // v0.0.3: Required for skills
   triggers: Trigger[];
   tools: Tool[];
   agentName: string;
@@ -12,6 +15,7 @@ interface CanvasProps {
 }
 
 export function Canvas({
+  agentId,
   triggers,
   tools,
   agentName,
@@ -38,11 +42,22 @@ export function Canvas({
           />
         </div>
 
-        {/* Right Column - Toolbox, Sub-agents, Skills */}
+        {/* Right Column - Toolbox, Sub-agents, Skills, Integrations */}
         <div className="flex flex-col gap-4">
           <ToolboxCard tools={tools} onToggleHITL={onToggleHITL} />
           <SubagentsCard subagents={subagents} />
-          <SkillsCard />
+          {/* v0.0.3: Use SkillsPanel with API integration */}
+          {agentId ? (
+            <div className="w-56">
+              <SkillsPanel agentId={agentId} />
+            </div>
+          ) : (
+            <SkillsCard />
+          )}
+          {/* v0.0.3: Slack Integration */}
+          <div className="w-56">
+            <SlackConfigPanel />
+          </div>
         </div>
       </div>
     </div>

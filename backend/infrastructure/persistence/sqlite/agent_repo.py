@@ -49,6 +49,7 @@ class SQLiteAgentRepository:
             existing.description = agent.description
             existing.system_prompt = agent.system_prompt
             existing.model = agent.model
+            existing.memory_approval_required = agent.memory_approval_required
             existing.updated_at = datetime.utcnow()
             existing.is_template = agent.is_template
 
@@ -70,6 +71,7 @@ class SQLiteAgentRepository:
                 description=agent.description,
                 system_prompt=agent.system_prompt,
                 model=agent.model,
+                memory_approval_required=agent.memory_approval_required,
                 created_at=agent.created_at,
                 updated_at=agent.updated_at,
                 is_template=agent.is_template,
@@ -172,6 +174,7 @@ class SQLiteAgentRepository:
             description=agent.description,
             system_prompt=agent.system_prompt,
             model=agent.model,
+            memory_approval_required=agent.memory_approval_required,
             tools=agent.tools,
             subagents=agent.subagents,
             triggers=[
@@ -199,6 +202,7 @@ class SQLiteAgentRepository:
             description=model.description or "",
             system_prompt=model.system_prompt,
             model=model.model,
+            memory_approval_required=model.memory_approval_required or False,
             tools=[
                 ToolConfig(
                     name=t.name,

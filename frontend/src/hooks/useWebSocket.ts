@@ -1,14 +1,17 @@
 import { useState, useEffect, useRef, useCallback } from 'react';
-import type { Message, HITLInterrupt, WSMessageType } from '../types';
+import type { Message, HITLInterrupt, MemoryEditRequest, WSMessageType } from '../types';
 
-// Stable URL to avoid useCallback recreation
-const WS_URL = `${window.location.protocol === 'https:' ? 'wss:' : 'ws:'}//${window.location.host}/ws/chat`;
+function buildWsUrl(agentId: string): string {
+  const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
+  const host = window.location.host;
+  return `${protocol}//${host}/api/v1/chat/${agentId}`;
+}
 
-export function useWebSocket(_url?: string) {
-  const url = _url || WS_URL;
+export function useWebSocket(agentId: string | null) {
   const [messages, setMessages] = useState<Message[]>([]);
   const [connected, setConnected] = useState(false);
   const [pendingHITL, setPendingHITL] = useState<HITLInterrupt | null>(null);
+  const [pendingMemoryEdit, setPendingMemoryEdit] = useState<MemoryEditRequest | null>(null); // v0.0.3
   const [isStreaming, setIsStreaming] = useState(false);
   const wsRef = useRef<WebSocket | null>(null);
   const messageIdRef = useRef(0);
@@ -16,9 +19,11 @@ export function useWebSocket(_url?: string) {
   const shouldReconnectRef = useRef(true);
 
   const connect = useCallback(() => {
+    if (!agentId) return;
     if (wsRef.current?.readyState === WebSocket.OPEN) return;
     if (wsRef.current?.readyState === WebSocket.CONNECTING) return;
 
+    const url = buildWsUrl(agentId);
     console.log('WebSocket connecting to:', url);
     const ws = new WebSocket(url);
     wsRef.current = ws;
@@ -129,6 +134,47 @@ export function useWebSocket(_url?: string) {
           setIsStreaming(false);
           break;
 
+        // v0.0.3: Memory edit request handling
+        case 'memory_edit_request':
+          setPendingMemoryEdit({
+            request_id: data.request_id,
+            tool_call_id: data.tool_call_id,
+            path: data.path,
+            operation: data.operation as 'write' | 'append' | 'delete',
+            current_content: data.current_content,
+            proposed_content: data.proposed_content,
+            reason: data.reason,
+            suspicious_flags: data.suspicious_flags,
+          });
+          setMessages((prev) => [
+            ...prev,
+            {
+              id: `msg-${++messageIdRef.current}`,
+              role: 'hitl',
+              content: `Memory update requested: ${data.path}`,
+              toolName: 'write_memory',
+              toolArgs: { path: data.path, reason: data.reason },
+              toolCallId: data.tool_call_id,
+            },
+          ]);
+          isStreamingRef.current = false;
+          setIsStreaming(false);
+          break;
+
+        case 'memory_edit_complete':
+          setMessages((prev) => [
+            ...prev,
+            {
+              id: `msg-${++messageIdRef.current}`,
+              role: 'tool',
+              content: data.success
+                ? `Memory updated: ${data.path}`
+                : `Memory update rejected: ${data.path}`,
+              toolName: 'write_memory',
+            },
+          ]);
+          break;
+
         case 'complete':
           isStreamingRef.current = false;
           setIsStreaming(false);
@@ -153,18 +199,42 @@ export function useWebSocket(_url?: string) {
           break;
       }
     };
-  }, [url]);
+  }, [agentId]);
 
+  // Connect/reconnect when agentId changes
   useEffect(() => {
+    // Close existing connection when agent changes
+    if (wsRef.current) {
+      shouldReconnectRef.current = false;
+      wsRef.current.close(1000, 'Agent changed');
+      wsRef.current = null;
+    }
+
+    // Clear state for new agent
+    setMessages([]);
+    setPendingHITL(null);
+    setPendingMemoryEdit(null);
+    setIsStreaming(false);
+    isStreamingRef.current = false;
+    messageIdRef.current = 0;
+
+    // Don't connect if no agent selected
+    if (!agentId) {
+      setConnected(false);
+      return;
+    }
+
+    // Connect to new agent
     shouldReconnectRef.current = true;
     connect();
+
     return () => {
       shouldReconnectRef.current = false;
       if (wsRef.current) {
         wsRef.current.close(1000, 'Component unmount');
       }
     };
-  }, [connect]);
+  }, [agentId, connect]);
 
   const sendMessage = useCallback((content: string) => {
     if (!wsRef.current || wsRef.current.readyState !== WebSocket.OPEN) {
@@ -223,18 +293,61 @@ export function useWebSocket(_url?: string) {
     []
   );
 
+  // v0.0.3: Send memory edit decision
+  const sendMemoryEditDecision = useCallback(
+    (
+      decision: 'approve' | 'edit' | 'reject',
+      requestId: string,
+      toolCallId: string,
+      editedContent?: string
+    ) => {
+      if (!wsRef.current || wsRef.current.readyState !== WebSocket.OPEN) {
+        console.error('WebSocket not connected');
+        return;
+      }
+
+      isStreamingRef.current = true;
+      setIsStreaming(true);
+      setPendingMemoryEdit(null);
+
+      wsRef.current.send(
+        JSON.stringify({
+          type: 'memory_edit_decision',
+          request_id: requestId,
+          tool_call_id: toolCallId,
+          decision,
+          edited_content: editedContent,
+        })
+      );
+
+      // Add decision message
+      setMessages((prev) => [
+        ...prev,
+        {
+          id: `msg-${++messageIdRef.current}`,
+          role: 'user',
+          content: `Memory ${decision === 'approve' ? 'approved' : decision === 'edit' ? 'approved with edits' : 'rejected'}`,
+        },
+      ]);
+    },
+    []
+  );
+
   const clearMessages = useCallback(() => {
     setMessages([]);
     setPendingHITL(null);
+    setPendingMemoryEdit(null);
   }, []);
 
   return {
     messages,
     connected,
     pendingHITL,
+    pendingMemoryEdit, // v0.0.3
     isStreaming,
     sendMessage,
     sendHITLDecision,
+    sendMemoryEditDecision, // v0.0.3
     clearMessages,
     reconnect: connect,
   };

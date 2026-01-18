@@ -5,6 +5,13 @@ from pydantic import BaseModel
 from typing import Optional
 
 from backend.domain.entities import ToolConfig, TriggerConfig, SubagentConfig
+
+# Available models for validation
+AVAILABLE_MODELS = [
+    "claude-sonnet-4-20250514",
+    "claude-opus-4-5-20251101",
+    "claude-haiku-4-20250514",
+]
 from backend.domain.exceptions import AgentNotFoundError
 from backend.application.use_cases.create_agent import CreateAgentUseCase, CreateAgentRequest
 from backend.application.use_cases.clone_template import CloneTemplateUseCase, CloneTemplateRequest
@@ -28,6 +35,7 @@ class AgentDetail(BaseModel):
     description: str
     system_prompt: str
     model: str
+    memory_approval_required: bool
     tools: list[ToolConfig]
     subagents: list[SubagentConfig]
     triggers: list[TriggerConfig]
@@ -51,6 +59,7 @@ class UpdateAgentBody(BaseModel):
     description: str | None = None
     system_prompt: str | None = None
     model: str | None = None
+    memory_approval_required: bool | None = None
     tools: list[ToolConfig] | None = None
     subagents: list[SubagentConfig] | None = None
     triggers: list[TriggerConfig] | None = None
@@ -110,6 +119,7 @@ async def get_agent(
         description=agent.description,
         system_prompt=agent.system_prompt,
         model=agent.model,
+        memory_approval_required=agent.memory_approval_required,
         tools=agent.tools,
         subagents=agent.subagents,
         triggers=agent.triggers,
@@ -123,6 +133,13 @@ async def create_agent(
     agent_repo=Depends(get_agent_repo)
 ):
     """Create a new agent."""
+    # Validate model
+    if body.model not in AVAILABLE_MODELS:
+        raise HTTPException(
+            status_code=400,
+            detail=f"Invalid model. Must be one of: {AVAILABLE_MODELS}",
+        )
+
     use_case = CreateAgentUseCase(agent_repo)
     request = CreateAgentRequest(
         name=body.name,
@@ -156,7 +173,14 @@ async def update_agent(
     if body.system_prompt is not None:
         agent.system_prompt = body.system_prompt
     if body.model is not None:
+        if body.model not in AVAILABLE_MODELS:
+            raise HTTPException(
+                status_code=400,
+                detail=f"Invalid model. Must be one of: {AVAILABLE_MODELS}",
+            )
         agent.model = body.model
+    if body.memory_approval_required is not None:
+        agent.memory_approval_required = body.memory_approval_required
     if body.tools is not None:
         agent.tools = body.tools
     if body.subagents is not None:

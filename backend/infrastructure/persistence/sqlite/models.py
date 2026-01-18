@@ -1,6 +1,6 @@
 """SQLAlchemy ORM models for Agent Builder."""
 
-from sqlalchemy import Column, String, Text, Boolean, DateTime, JSON, ForeignKey
+from sqlalchemy import Column, String, Text, Boolean, DateTime, JSON, ForeignKey, Index
 from sqlalchemy.orm import relationship
 from datetime import datetime
 from backend.infrastructure.persistence.sqlite.database import Base
@@ -15,6 +15,7 @@ class AgentModel(Base):
     description = Column(Text, default="")
     system_prompt = Column(Text, nullable=False)
     model = Column(String, default="claude-sonnet-4-20250514")
+    memory_approval_required = Column(Boolean, default=False)  # v0.0.3: HITL for memory writes
     created_at = Column(DateTime, default=datetime.utcnow)
     updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
     is_template = Column(Boolean, default=False)
@@ -117,3 +118,87 @@ class CredentialModel(Base):
     encrypted_data = Column(Text, nullable=False)  # Fernet encrypted JSON
     created_at = Column(DateTime, default=datetime.utcnow)
     updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+
+
+# v0.0.3 additions
+
+
+class MemoryFileModel(Base):
+    """SQLAlchemy model for agent memory files (virtual filesystem)."""
+    __tablename__ = "memory_files"
+
+    id = Column(String, primary_key=True)
+    agent_id = Column(String, ForeignKey("agents.id", ondelete="CASCADE"), nullable=False)
+    path = Column(String, nullable=False)
+    content = Column(Text, nullable=False)
+    content_type = Column(String, default="text/markdown")
+    created_at = Column(DateTime, default=datetime.utcnow)
+    updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+
+    __table_args__ = (
+        Index("idx_memory_files_agent_path", "agent_id", "path", unique=True),
+    )
+
+
+class MemoryEditRequestModel(Base):
+    """SQLAlchemy model for pending memory edit requests (HITL approval)."""
+    __tablename__ = "memory_edit_requests"
+
+    id = Column(String, primary_key=True)
+    agent_id = Column(String, ForeignKey("agents.id", ondelete="CASCADE"), nullable=False)
+    path = Column(String, nullable=False)
+    operation = Column(String, nullable=False)  # 'write', 'append', 'delete'
+    proposed_content = Column(Text)
+    previous_content = Column(Text)  # For undo support
+    reason = Column(Text)
+    status = Column(String, default="pending")  # 'pending', 'approved', 'rejected'
+    created_at = Column(DateTime, default=datetime.utcnow)
+    resolved_at = Column(DateTime)
+
+
+class SkillModel(Base):
+    """SQLAlchemy model for agent skills (Anthropic Agent Skills spec).
+
+    Implements the Agent Skills specification with:
+    - Auto-normalized names (lowercase, hyphens)
+    - Required fields: name, description, instructions
+    - Optional fields: license, compatibility, metadata, allowed_tools
+
+    Reference: https://agentskills.io/specification
+    """
+    __tablename__ = "skills"
+
+    id = Column(String, primary_key=True)
+    agent_id = Column(String, ForeignKey("agents.id", ondelete="CASCADE"), nullable=False)
+    name = Column(String(64), nullable=False)  # Spec: max 64 chars, lowercase-hyphenated
+    description = Column(Text, nullable=False)  # Spec: max 1024 chars
+    instructions = Column(Text, nullable=False)
+
+    # v0.0.3: Anthropic Agent Skills spec optional fields
+    license = Column(String, nullable=True)
+    compatibility = Column(String(500), nullable=True)  # Spec: max 500 chars
+    skill_metadata = Column(JSON, default=dict)  # Renamed from metadata (reserved)
+    allowed_tools = Column(JSON, default=list)  # Space-delimited in spec, stored as list
+
+    created_at = Column(DateTime, default=datetime.utcnow)
+    updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+
+    __table_args__ = (
+        Index("idx_skills_agent_name", "agent_id", "name", unique=True),
+    )
+
+
+class WizardConversationModel(Base):
+    """SQLAlchemy model for persisting builder wizard conversation state.
+
+    Stores conversation messages to survive server restarts.
+    """
+    __tablename__ = "wizard_conversations"
+
+    id = Column(String, primary_key=True)
+    thread_id = Column(String, nullable=False, index=True)
+    role = Column(String, nullable=False)  # 'user', 'assistant', 'tool'
+    content = Column(Text, nullable=False)
+    tool_calls = Column(JSON)  # For assistant messages with tool calls
+    tool_call_id = Column(String)  # For tool result messages
+    created_at = Column(DateTime, default=datetime.utcnow)

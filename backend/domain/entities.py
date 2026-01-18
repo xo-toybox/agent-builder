@@ -3,10 +3,15 @@
 Core business models that represent the domain concepts.
 """
 
-from pydantic import BaseModel, Field, model_validator
+from pydantic import BaseModel, Field, field_validator, model_validator
 from datetime import datetime
 from enum import Enum
-from typing import Literal
+from typing import Any, Literal
+
+from backend.domain.validation.skill_validator import (
+    normalize_skill_name,
+    validate_skill_name,
+)
 
 
 class ToolSource(str, Enum):
@@ -67,6 +72,7 @@ class AgentDefinition(BaseModel):
     description: str = ""
     system_prompt: str
     model: str = "claude-sonnet-4-20250514"
+    memory_approval_required: bool = False  # v0.0.3: Require HITL approval for memory writes
     tools: list[ToolConfig] = Field(default_factory=list)
     subagents: list[SubagentConfig] = Field(default_factory=list)
     triggers: list[TriggerConfig] = Field(default_factory=list)
@@ -111,3 +117,52 @@ class MCPServerConfig(BaseModel):
     args: list[str] = Field(default_factory=list)
     env: dict[str, str] = Field(default_factory=dict)
     enabled: bool = True
+
+
+class Skill(BaseModel):
+    """Agent skill following Anthropic Agent Skills specification.
+
+    Skills are packages of specialized instructions that agents load dynamically.
+    Progressive disclosure: Only name/description loaded into system prompt by default,
+    full instructions accessed via memory filesystem when needed.
+
+    Reference: https://agentskills.io/specification
+    """
+
+    id: str
+    agent_id: str
+    name: str = Field(..., max_length=64)  # Spec: lowercase-hyphenated
+    description: str = Field(..., max_length=1024)  # Spec: max 1024 chars
+    instructions: str  # Full skill instructions (markdown body)
+
+    # Optional spec fields
+    license: str | None = None
+    compatibility: str | None = Field(None, max_length=500)
+    metadata: dict[str, Any] = Field(default_factory=dict)
+    allowed_tools: list[str] = Field(default_factory=list)
+
+    created_at: datetime
+    updated_at: datetime
+
+    @model_validator(mode="before")
+    @classmethod
+    def auto_normalize_name(cls, values: dict) -> dict:
+        """Auto-normalize name to spec format (lowercase, hyphens)."""
+        if isinstance(values, dict) and "name" in values:
+            values["name"] = normalize_skill_name(values["name"])
+        return values
+
+    @field_validator("name")
+    @classmethod
+    def validate_name_spec(cls, v: str) -> str:
+        """Validate name against Anthropic spec rules."""
+        validate_skill_name(v)
+        return v
+
+    @field_validator("description")
+    @classmethod
+    def validate_description_not_empty(cls, v: str) -> str:
+        """Ensure description is non-empty."""
+        if not v or not v.strip():
+            raise ValueError("Description cannot be empty")
+        return v

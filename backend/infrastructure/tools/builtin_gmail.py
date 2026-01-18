@@ -326,4 +326,8 @@ def create_gmail_tools(credentials: Credentials) -> list:
 
         return f"Labels updated for email {email_id}"
 
+    # Mark email-sending tools as always requiring HITL approval
+    send_email.metadata = {"requires_hitl": True}
+    draft_reply.metadata = {"requires_hitl": True}
+
     return [list_emails, get_email, search_emails, draft_reply, send_email, label_email]

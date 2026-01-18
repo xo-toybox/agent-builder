@@ -80,6 +80,7 @@ export interface AgentDetail {
   description: string;
   system_prompt: string;
   model: string;
+  memory_approval_required: boolean;
   tools: ToolConfig[];
   subagents: SubagentConfig[];
   triggers: TriggerConfig[];
@@ -115,11 +116,32 @@ export interface HITLInterrupt {
   args: Record<string, unknown>;
 }
 
+// v0.0.3: Memory edit request for HITL approval
+export interface MemoryEditRequest {
+  request_id: string;
+  tool_call_id: string;
+  path: string;
+  operation: 'write' | 'append' | 'delete';
+  current_content: string | null;
+  proposed_content: string;
+  reason: string;
+  suspicious_flags: SuspiciousFlag[];
+}
+
+export interface SuspiciousFlag {
+  pattern: string;
+  match: string;
+  description: string;
+  severity: 'warning' | 'danger';
+}
+
 export type WSMessageType =
   | { type: 'token'; content: string }
   | { type: 'tool_call'; name: string; args: Record<string, unknown> }
   | { type: 'tool_result'; name: string; result: unknown }
   | { type: 'hitl_interrupt'; tool_call_id: string; name: string; args: Record<string, unknown> }
+  | { type: 'memory_edit_request'; request_id: string; tool_call_id: string; path: string; operation: string; current_content: string | null; proposed_content: string; reason: string; suspicious_flags: SuspiciousFlag[] }
+  | { type: 'memory_edit_complete'; request_id: string; success: boolean; path: string }
   | { type: 'complete' }
   | { type: 'error'; message: string }
   | { type: 'new_email'; email: Record<string, unknown> }
@@ -156,4 +178,38 @@ export interface BuilderMessage {
   content: string;
   toolName?: string;
   toolResult?: unknown;
+}
+
+// ============================================================================
+// v0.0.3 Types
+// ============================================================================
+
+export interface Skill {
+  id: string;
+  name: string;
+  description: string;
+  instructions: string;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface SkillCreate {
+  name: string;
+  description: string;
+  instructions: string;
+}
+
+// ============================================================================
+// Global Settings Types
+// ============================================================================
+
+export interface GlobalSettingsResponse {
+  default_model: string;
+  tavily_api_key_configured: boolean;
+  tavily_api_key_preview: string | null;
+}
+
+export interface ModelOption {
+  id: string;
+  name: string;
 }

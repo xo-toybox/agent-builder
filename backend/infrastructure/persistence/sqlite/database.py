@@ -1,5 +1,6 @@
 """SQLite database setup and session management."""
 
+from sqlalchemy import text
 from sqlalchemy.ext.asyncio import create_async_engine, AsyncSession, async_sessionmaker
 from sqlalchemy.orm import declarative_base
 from backend.config import settings
@@ -12,11 +13,15 @@ Base = declarative_base()
 
 
 async def init_db():
-    """Initialize database tables."""
+    """Initialize database tables with WAL mode for better concurrency."""
     # Import models to ensure they're registered with Base
     from backend.infrastructure.persistence.sqlite import models  # noqa: F401
 
     async with engine.begin() as conn:
+        # Enable WAL mode for better concurrency (v0.0.3)
+        await conn.execute(text("PRAGMA journal_mode=WAL"))
+        await conn.execute(text("PRAGMA synchronous=NORMAL"))
+        # Create all tables including new memory/skills tables
         await conn.run_sync(Base.metadata.create_all)
 
 

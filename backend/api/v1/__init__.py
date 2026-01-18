@@ -2,7 +2,7 @@
 
 from fastapi import APIRouter
 
-from backend.api.v1 import agents, wizard, chat, tools, triggers, auth
+from backend.api.v1 import agents, wizard, chat, tools, triggers, auth, memory, skills, credentials, settings
 
 router = APIRouter(prefix="/api/v1")
 
@@ -12,5 +12,9 @@ router.include_router(chat.router)
 router.include_router(tools.router)
 router.include_router(triggers.router)
 router.include_router(auth.router)
+router.include_router(memory.router)  # v0.0.3
+router.include_router(skills.router)  # v0.0.3
+router.include_router(credentials.router)  # v0.0.3
+router.include_router(settings.router)  # v0.0.3 - Global settings
 
 __all__ = ["router"]

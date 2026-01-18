@@ -1,20 +1,27 @@
 """Run Agent use case."""
 
-from typing import Any, AsyncIterator
-from google.oauth2.credentials import Credentials
-from langgraph.checkpoint.memory import MemorySaver
-from deepagents import create_deep_agent
+import logging
+from typing import Any, AsyncIterator, Protocol
 
-from backend.domain.ports import AgentRepository, CredentialStore
-from backend.domain.entities import ToolSource
+from deepagents import create_deep_agent
+from google.oauth2.credentials import Credentials
+
+from backend.application.services.skill_loader import SkillLoader
+from backend.domain.entities import AgentDefinition, ToolSource
 from backend.domain.exceptions import AgentNotFoundError, CredentialNotFoundError
+from backend.domain.ports import AgentRepository, CredentialStore
+from backend.infrastructure.persistence.sqlite.checkpointer import get_checkpointer
 from backend.infrastructure.tools.registry import ToolRegistryImpl
+
+logger = logging.getLogger(__name__)
 
 
 class RunAgentUseCase:
     """Use case for running an agent with a message.
 
     Creates and executes a deepagents instance from an agent definition.
+    Uses persistent SQLite checkpointing for conversation state (v0.0.3).
+    Uses SkillLoader for progressive disclosure of skills (v0.0.3).
     """
 
     def __init__(
@@ -22,6 +29,7 @@ class RunAgentUseCase:
         agent_repo: AgentRepository,
         credential_store: CredentialStore,
         tool_registry: ToolRegistryImpl,
+        skill_loader: SkillLoader | None = None,
     ):
         """Initialize the use case.
 
@@ -29,18 +37,23 @@ class RunAgentUseCase:
             agent_repo: Repository for agent definitions
             credential_store: Store for credentials
             tool_registry: Registry for tools
+            skill_loader: Service for loading skills with progressive disclosure (v0.0.3)
         """
         self.agent_repo = agent_repo
         self.credential_store = credential_store
         self.tool_registry = tool_registry
-        self._agents: dict[str, Any] = {}  # Cache of running agents
+        self.skill_loader = skill_loader
+        # v0.0.3: Removed agent caching - always create fresh agent with shared checkpointer
 
     async def get_or_create_agent(
         self,
         agent_id: str,
         thread_id: str,
     ) -> tuple[Any, dict]:
-        """Get or create an agent instance.
+        """Create an agent instance with persistent checkpointing.
+
+        v0.0.3: Always creates fresh agent instance with shared AsyncSqliteSaver.
+        This enables conversation resumption across server restarts.
 
         Args:
             agent_id: Agent definition ID
@@ -53,19 +66,16 @@ class RunAgentUseCase:
             AgentNotFoundError: If agent not found
             CredentialNotFoundError: If credentials not found
         """
-        cache_key = f"{agent_id}:{thread_id}"
-
-        if cache_key in self._agents:
-            return self._agents[cache_key]
-
         # Load agent definition
         agent_def = await self.agent_repo.get(agent_id)
         if not agent_def:
             raise AgentNotFoundError(agent_id)
 
-        # Check if agent needs Google credentials (only for built-in tools)
+        # Check if agent needs Google credentials (only for Gmail/Calendar tools)
+        GOOGLE_TOOLS = {"list_emails", "get_email", "search_emails", "draft_reply",
+                        "send_email", "label_email", "list_events", "get_event"}
         needs_google = any(
-            t.enabled and t.source == ToolSource.BUILTIN
+            t.enabled and t.source == ToolSource.BUILTIN and t.name in GOOGLE_TOOLS
             for t in agent_def.tools
         )
 
@@ -83,28 +93,60 @@ class RunAgentUseCase:
                 client_secret=creds_dict.get("client_secret"),
             )
 
-        # Create tools
-        tools = await self.tool_registry.create_tools(agent_def.tools, credentials)
+        # Create tools (v0.0.3: includes memory tools)
+        tools = await self.tool_registry.create_tools(agent_def.tools, credentials, agent_id)
 
-        # Get HITL tools
-        hitl_tools = self.tool_registry.get_hitl_tools(agent_def.tools)
+        # Get HITL tools - convert list to dict for deepagents interrupt_on
+        # Passes tools for metadata introspection + configs for user-configured HITL
+        hitl_tools_list = self.tool_registry.get_hitl_tools(tools, agent_def.tools)
+        hitl_tools = {name: True for name in hitl_tools_list} if hitl_tools_list else None
 
-        # Create checkpointer
-        checkpointer = MemorySaver()
+        # Get persistent checkpointer (v0.0.3)
+        checkpointer = get_checkpointer()
 
-        # Create agent
+        # v0.0.3: Build system prompt with skills
+        system_prompt = await self._build_system_prompt(agent_id, agent_def)
+
+        # Create agent with persistent checkpointer
         agent = create_deep_agent(
             model=agent_def.model,
             tools=tools,
-            system_message=agent_def.system_prompt,
+            system_prompt=system_prompt,
             checkpointer=checkpointer,
             interrupt_on=hitl_tools,
         )
 
         config = {"configurable": {"thread_id": thread_id}}
-        self._agents[cache_key] = (agent, config)
-
         return agent, config
+
+    async def _build_system_prompt(
+        self,
+        agent_id: str,
+        agent_def: AgentDefinition,
+    ) -> str:
+        """Build system prompt with skills metadata (progressive disclosure).
+
+        v0.0.3: Uses SkillLoader for progressive disclosure - only metadata
+        (name, description) injected into system prompt. Full instructions
+        loaded on-demand via memory tools when agent reads skills/{name}.md.
+
+        Args:
+            agent_id: Agent ID
+            agent_def: Agent definition
+
+        Returns:
+            Complete system prompt with skills metadata section
+        """
+        base_prompt = agent_def.system_prompt
+
+        # Skip if no skill loader
+        if self.skill_loader is None:
+            return base_prompt
+
+        # Inject metadata only (stage 1 of progressive disclosure)
+        skills_section = await self.skill_loader.get_metadata_for_prompt(agent_id)
+
+        return base_prompt + skills_section
 
     async def run(
         self,
@@ -197,15 +239,4 @@ class RunAgentUseCase:
             async for event in agent.astream_events(None, config, version="v2"):
                 yield event
 
-    def clear_cache(self, agent_id: str | None = None):
-        """Clear agent cache.
-
-        Args:
-            agent_id: Specific agent to clear, or None for all
-        """
-        if agent_id:
-            keys_to_remove = [k for k in self._agents if k.startswith(f"{agent_id}:")]
-            for key in keys_to_remove:
-                del self._agents[key]
-        else:
-            self._agents.clear()
+    # v0.0.3: Removed clear_cache - no longer needed with persistent checkpointing

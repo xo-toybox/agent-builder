@@ -1,0 +1,26 @@
+{
+  "gmail": [
+    {"name": "list_emails", "description": "List emails from inbox with filters", "hitl_recommended": false},
+    {"name": "get_email", "description": "Get full email content by ID", "hitl_recommended": false},
+    {"name": "search_emails", "description": "Search emails using Gmail query syntax", "hitl_recommended": false},
+    {"name": "draft_reply", "description": "Create draft reply to an email", "hitl_recommended": true},
+    {"name": "send_email", "description": "Send an email", "hitl_recommended": true},
+    {"name": "label_email", "description": "Modify email labels (mark read, archive, etc.)", "hitl_recommended": false}
+  ],
+  "calendar": [
+    {"name": "list_events", "description": "List calendar events for a date range", "hitl_recommended": false},
+    {"name": "get_event", "description": "Get calendar event details", "hitl_recommended": false}
+  ],
+  "memory": [
+    {"name": "write_memory", "description": "Write content to agent memory", "hitl_recommended": true},
+    {"name": "read_memory", "description": "Read content from agent memory", "hitl_recommended": false},
+    {"name": "list_memory", "description": "List files in agent memory", "hitl_recommended": false}
+  ],
+  "slack": [
+    {"name": "send_slack_message", "description": "Send a message to a Slack channel", "hitl_recommended": true},
+    {"name": "list_slack_channels", "description": "List available Slack channels", "hitl_recommended": false}
+  ],
+  "web": [
+    {"name": "web_search", "description": "Search the internet for information", "hitl_recommended": false}
+  ]
+}

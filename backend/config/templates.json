@@ -1,0 +1,16 @@
+[
+  {
+    "id": "email_assistant_template",
+    "name": "Email Assistant",
+    "description": "An intelligent email assistant that triages emails, drafts responses, and integrates with calendar.",
+    "tools": ["list_emails", "get_email", "search_emails", "draft_reply", "send_email", "label_email"],
+    "triggers": ["email_polling"]
+  },
+  {
+    "id": "research_assistant_template",
+    "name": "Research Assistant",
+    "description": "A web research assistant that finds information, synthesizes findings, and learns your research preferences.",
+    "tools": ["web_search", "write_memory", "read_memory", "list_memory"],
+    "triggers": []
+  }
+]

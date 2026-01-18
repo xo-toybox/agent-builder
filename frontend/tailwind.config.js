@@ -13,11 +13,14 @@ export default {
         'bg-tertiary': '#f3f4f6',
         'bg-canvas': '#fafafa',
         'border': '#e5e7eb',
+        'border-primary': '#e5e7eb',
         'border-dark': '#d1d5db',
         'text-primary': '#111827',
         'text-secondary': '#6b7280',
         'text-muted': '#9ca3af',
         // Accent colors matching LangSmith
+        'accent-primary': '#7c3aed',    // Purple - main accent
+        'accent-secondary': '#6d28d9',  // Darker purple - hover state
         'accent-orange': '#f97316',
         'accent-teal': '#0d9488',
         'accent-purple': '#7c3aed',
