@@ -93,8 +93,13 @@ class RunAgentUseCase:
                 client_secret=creds_dict.get("client_secret"),
             )
 
-        # Create tools (v0.0.3: includes memory tools)
-        tools = await self.tool_registry.create_tools(agent_def.tools, credentials, agent_id)
+        # Create tools (v0.0.3: includes memory tools with configurable HITL)
+        tools = await self.tool_registry.create_tools(
+            agent_def.tools,
+            credentials,
+            agent_id,
+            memory_approval_required=agent_def.memory_approval_required,
+        )
 
         # Get HITL tools - convert list to dict for deepagents interrupt_on
         # Passes tools for metadata introspection + configs for user-configured HITL

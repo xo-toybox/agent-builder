@@ -358,6 +358,9 @@ async def _handle_memory_decision(
             })
             return
 
+        # Normalize path to canonical form to prevent orphaned entries
+        path = memory_fs._normalize_path(path)
+
         if decision == "approve":
             # Write to memory
             content = edited_content or edit_request["proposed_content"]

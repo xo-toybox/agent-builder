@@ -16,12 +16,14 @@ from backend.infrastructure.persistence.sqlite.memory_fs import (
 def create_memory_tools(
     memory_fs: MemoryFileSystem,
     agent_id: str,
+    memory_approval_required: bool = True,
 ) -> list[Callable]:
     """Create memory tools for an agent.
 
     Args:
         memory_fs: Virtual filesystem for memory
         agent_id: Agent ID for scoping
+        memory_approval_required: Whether write_memory requires HITL approval
 
     Returns:
         List of memory tool functions
@@ -58,8 +60,8 @@ def create_memory_tools(
         # This tool just signals intent and returns a pending message
         return f"Memory update proposed at '{path}'. Waiting for user approval."
 
-    # Mark as always requiring HITL approval
-    write_memory.metadata = {"requires_hitl": True}
+    # Mark as requiring HITL approval based on agent setting
+    write_memory.metadata = {"requires_hitl": memory_approval_required}
 
     @tool
     async def read_memory(path: str) -> str:

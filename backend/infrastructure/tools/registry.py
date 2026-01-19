@@ -53,6 +53,7 @@ class ToolRegistryImpl:
         configs: list[ToolConfig],
         credentials: Credentials | None,
         agent_id: str | None = None,
+        memory_approval_required: bool = True,
     ) -> list[Any]:
         """Create executable tools from configurations.
 
@@ -60,6 +61,7 @@ class ToolRegistryImpl:
             configs: List of tool configurations
             credentials: Google OAuth credentials for built-in tools (optional)
             agent_id: Agent ID for memory tools (v0.0.3)
+            memory_approval_required: Whether write_memory requires HITL approval (v0.0.3)
 
         Returns:
             List of LangChain-compatible tools
@@ -68,7 +70,9 @@ class ToolRegistryImpl:
 
         # v0.0.3: Always add memory tools if memory_fs is available
         if self.memory_fs is not None and agent_id is not None:
-            memory_tools = create_memory_tools(self.memory_fs, agent_id)
+            memory_tools = create_memory_tools(
+                self.memory_fs, agent_id, memory_approval_required
+            )
             tools.extend(memory_tools)
 
         # v0.0.3: Check for Slack credentials and add Slack tools
