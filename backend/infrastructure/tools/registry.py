@@ -75,12 +75,16 @@ class ToolRegistryImpl:
             )
             tools.extend(memory_tools)
 
-        # v0.0.3: Check for Slack credentials and add Slack tools
+        # v0.0.3: Check for Slack credentials and global settings
         slack_token = None
+        tavily_api_key = None
         if self.credential_store:
             slack_creds = await self.credential_store.get("slack")
             if slack_creds:
                 slack_token = slack_creds.get("token")
+            global_settings = await self.credential_store.get("global_settings")
+            if global_settings:
+                tavily_api_key = global_settings.get("tavily_api_key") or None
 
         # Build tool pools by category (lazy, only if needed)
         tool_pools: dict[str, list[Any]] = {}
@@ -91,7 +95,7 @@ class ToolRegistryImpl:
             if category == "slack" and slack_token:
                 tool_pools[category] = create_slack_tools(slack_token)
             elif category == "web":
-                tool_pools[category] = create_web_tools()
+                tool_pools[category] = create_web_tools(tavily_api_key)
             elif category in ("gmail", "calendar") and credentials:
                 # Use stable cache key based on credentials (refresh_token or token)
                 cache_key = credentials.refresh_token or credentials.token
