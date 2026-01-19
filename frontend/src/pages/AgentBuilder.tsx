@@ -1,5 +1,5 @@
 import { useBuilderChat } from '../hooks/useBuilderChat';
-import { useState, useRef, useEffect } from 'react';
+import { useState, useRef, useEffect, useCallback } from 'react';
 
 interface AgentBuilderProps {
   onBack: () => void;
@@ -10,10 +10,35 @@ export function AgentBuilder({ onBack, onAgentCreated }: AgentBuilderProps) {
   const { messages, connected, isStreaming, sendMessage, clearMessages } = useBuilderChat();
   const [input, setInput] = useState('');
   const messagesEndRef = useRef<HTMLDivElement>(null);
+  const messagesContainerRef = useRef<HTMLDivElement>(null);
+  const userScrolledRef = useRef(false);
 
+  // Smart scroll: only auto-scroll if user is near bottom
+  const isNearBottom = useCallback(() => {
+    const container = messagesContainerRef.current;
+    if (!container) return true;
+    const threshold = 100; // pixels from bottom
+    return container.scrollHeight - container.scrollTop - container.clientHeight < threshold;
+  }, []);
+
+  // Track if user manually scrolled up
+  const handleScroll = useCallback(() => {
+    userScrolledRef.current = !isNearBottom();
+  }, [isNearBottom]);
+
+  // Auto-scroll only if user hasn't scrolled up
   useEffect(() => {
-    messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
+    if (!userScrolledRef.current) {
+      messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
+    }
   }, [messages]);
+
+  // Reset scroll tracking when streaming completes - but only if user is near bottom
+  useEffect(() => {
+    if (!isStreaming && isNearBottom()) {
+      userScrolledRef.current = false;
+    }
+  }, [isStreaming, isNearBottom]);
 
   // Check if an agent was created in the last message
   useEffect(() => {
@@ -66,7 +91,11 @@ export function AgentBuilder({ onBack, onAgentCreated }: AgentBuilderProps) {
       </div>
 
       {/* Messages */}
-      <div className="flex-1 overflow-y-auto p-6">
+      <div
+        ref={messagesContainerRef}
+        onScroll={handleScroll}
+        className="flex-1 overflow-y-auto p-6"
+      >
         {messages.length === 0 ? (
           <div className="h-full flex items-center justify-center">
             <div className="text-center max-w-md">
@@ -119,10 +148,12 @@ export function AgentBuilder({ onBack, onAgentCreated }: AgentBuilderProps) {
                 </div>
               </div>
             ))}
-            {isStreaming && (
+            {isStreaming && messages[messages.length - 1]?.role !== 'assistant' && (
               <div className="flex justify-start">
-                <div className="bg-bg-secondary rounded-lg p-4">
-                  <span className="inline-block w-2 h-4 bg-text-secondary animate-pulse" />
+                <div className="bg-bg-secondary rounded-lg p-4 flex items-center gap-1">
+                  <span className="w-2 h-2 bg-text-secondary rounded-full animate-bounce" style={{ animationDelay: '0ms' }} />
+                  <span className="w-2 h-2 bg-text-secondary rounded-full animate-bounce" style={{ animationDelay: '150ms' }} />
+                  <span className="w-2 h-2 bg-text-secondary rounded-full animate-bounce" style={{ animationDelay: '300ms' }} />
                 </div>
               </div>
             )}

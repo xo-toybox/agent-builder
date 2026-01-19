@@ -81,6 +81,32 @@ export function useAgents() {
     }
   }, [fetchAgents]);
 
+  // Update an agent
+  const updateAgent = useCallback(async (agentId: string, updates: Partial<AgentDetail>): Promise<boolean> => {
+    try {
+      const response = await fetch(`${API_BASE}/agents/${agentId}`, {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(updates),
+      });
+      if (!response.ok) throw new Error('Failed to save changes');
+
+      // Refresh the selected agent
+      if (selectedAgent?.id === agentId) {
+        const updated = await getAgent(agentId);
+        setSelectedAgent(updated);
+      }
+      await fetchAgents();
+      toast.success('Changes saved');
+      return true;
+    } catch (err) {
+      const message = err instanceof Error ? err.message : 'Unknown error';
+      setError(message);
+      toast.error(message);
+      return false;
+    }
+  }, [fetchAgents, selectedAgent, getAgent]);
+
   // Delete an agent
   const deleteAgent = useCallback(async (agentId: string): Promise<boolean> => {
     try {
@@ -102,6 +128,47 @@ export function useAgents() {
     }
   }, [fetchAgents, selectedAgent]);
 
+  // Toggle HITL for a tool
+  const toggleHITL = useCallback(async (agentId: string, toolName: string, enabled: boolean): Promise<boolean> => {
+    try {
+      // Get current agent to modify tools
+      const agent = selectedAgent?.id === agentId ? selectedAgent : await getAgent(agentId);
+      if (!agent) throw new Error('Agent not found');
+
+      // Update the tool's hitl_enabled status
+      const updatedTools = agent.tools.map(tool =>
+        tool.name === toolName ? { ...tool, hitl_enabled: enabled } : tool
+      );
+
+      return await updateAgent(agentId, { tools: updatedTools });
+    } catch (err) {
+      const message = err instanceof Error ? err.message : 'Unknown error';
+      toast.error(message);
+      return false;
+    }
+  }, [selectedAgent, getAgent, updateAgent]);
+
+  // Toggle trigger on/off
+  const toggleTrigger = useCallback(async (agentId: string, triggerId: string): Promise<boolean> => {
+    try {
+      const response = await fetch(`${API_BASE}/triggers/${agentId}/${triggerId}/toggle`, {
+        method: 'POST',
+      });
+      if (!response.ok) throw new Error('Failed to toggle trigger');
+
+      // Refresh agent to get updated trigger state
+      if (selectedAgent?.id === agentId) {
+        const updated = await getAgent(agentId);
+        setSelectedAgent(updated);
+      }
+      return true;
+    } catch (err) {
+      const message = err instanceof Error ? err.message : 'Unknown error';
+      toast.error(message);
+      return false;
+    }
+  }, [selectedAgent, getAgent]);
+
   // Initial load
   useEffect(() => {
     const load = async () => {
@@ -119,8 +186,11 @@ export function useAgents() {
     loading,
     error,
     selectAgent,
+    updateAgent,
     cloneTemplate,
     deleteAgent,
+    toggleHITL,
+    toggleTrigger,
     refreshAgents: fetchAgents,
     refreshTemplates: fetchTemplates,
     clearError: () => setError(null),

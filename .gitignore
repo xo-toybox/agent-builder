@@ -35,6 +35,9 @@ ENV/
 # Data (persisted configs and tokens)
 data/
 
+# Temp (ephemeral runtime files)
+.tmp/
+
 # IDE
 .idea/
 .vscode/
@@ -49,6 +52,7 @@ Thumbs.db
 node_modules/
 frontend/node_modules/
 frontend/dist/
+frontend/.vite/
 
 # TypeScript build info
 *.tsbuildinfo
@@ -61,3 +65,4 @@ npm-debug.log*
 .pytest_cache/
 .coverage
 htmlcov/
+

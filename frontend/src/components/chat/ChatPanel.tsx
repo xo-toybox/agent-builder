@@ -1,5 +1,6 @@
 import { useState, useEffect } from 'react';
-import type { Message, HITLInterrupt } from '../../types';
+import type { Message, HITLInterrupt, MemoryEditRequest } from '../../types';
+import { MemoryEditApproval } from './MemoryEditApproval';
 
 interface ChatPanelProps {
   agentName: string;
@@ -7,11 +8,18 @@ interface ChatPanelProps {
   connected: boolean;
   isStreaming: boolean;
   pendingHITL: HITLInterrupt | null;
+  pendingMemoryEdit: MemoryEditRequest | null; // v0.0.3
   onSendMessage: (content: string) => void;
   onHITLDecision: (
     decision: 'approve' | 'edit' | 'reject',
     toolCallId: string,
     newArgs?: Record<string, unknown>
+  ) => void;
+  onMemoryEditDecision: ( // v0.0.3
+    decision: 'approve' | 'edit' | 'reject',
+    requestId: string,
+    toolCallId: string,
+    editedContent?: string
   ) => void;
   onClear: () => void;
   onHide: () => void;
@@ -23,15 +31,17 @@ export function ChatPanel({
   connected,
   isStreaming,
   pendingHITL,
+  pendingMemoryEdit,
   onSendMessage,
   onHITLDecision,
+  onMemoryEditDecision,
   onClear,
   onHide,
 }: ChatPanelProps) {
   const [input, setInput] = useState('');
 
   const handleSubmit = () => {
-    if (!input.trim() || isStreaming || pendingHITL) return;
+    if (!input.trim() || isStreaming || pendingHITL || pendingMemoryEdit) return;
     onSendMessage(input.trim());
     setInput('');
   };
@@ -99,6 +109,14 @@ export function ChatPanel({
         />
       )}
 
+      {/* v0.0.3: Memory Edit Approval */}
+      {pendingMemoryEdit && (
+        <MemoryEditApproval
+          request={pendingMemoryEdit}
+          onDecision={onMemoryEditDecision}
+        />
+      )}
+
       {/* Input Area */}
       <div className="p-4 border-t border-border">
         <div className="relative">
@@ -107,13 +125,13 @@ export function ChatPanel({
             onChange={(e) => setInput(e.target.value)}
             onKeyDown={handleKeyDown}
             placeholder="Ask your agent to update itself..."
-            disabled={!connected || isStreaming || !!pendingHITL}
+            disabled={!connected || isStreaming || !!pendingHITL || !!pendingMemoryEdit}
             rows={2}
             className="w-full px-4 py-3 pr-12 bg-bg-tertiary border border-border rounded-lg text-text-primary text-sm resize-none focus:border-accent-teal focus:outline-none disabled:opacity-50"
           />
           <button
             onClick={handleSubmit}
-            disabled={!connected || isStreaming || !!pendingHITL || !input.trim()}
+            disabled={!connected || isStreaming || !!pendingHITL || !!pendingMemoryEdit || !input.trim()}
             className="absolute right-3 bottom-3 p-1.5 text-accent-orange disabled:text-text-muted"
           >
             <svg className="w-5 h-5" fill="currentColor" viewBox="0 0 24 24">
@@ -145,17 +163,7 @@ function MessageBubble({ message }: { message: Message }) {
   const isHITL = message.role === 'hitl';
 
   if (isTool) {
-    return (
-      <div className="bg-bg-tertiary rounded-lg p-3">
-        <div className="flex items-center gap-2 text-text-muted mb-1">
-          <span className="text-xs">Tool</span>
-          <span className="font-mono text-accent-teal text-xs">{message.toolName}</span>
-        </div>
-        <pre className="text-text-secondary text-xs overflow-x-auto whitespace-pre-wrap">
-          {message.content}
-        </pre>
-      </div>
-    );
+    return <ToolResultBubble toolName={message.toolName || 'tool'} content={message.content} />;
   }
 
   if (isHITL) {
@@ -183,6 +191,79 @@ function MessageBubble({ message }: { message: Message }) {
       >
         <p className="text-sm whitespace-pre-wrap">{message.content}</p>
       </div>
+    </div>
+  );
+}
+
+function ToolResultBubble({ toolName, content }: { toolName: string; content: string }) {
+  const [expanded, setExpanded] = useState(false);
+
+  // Try to parse as JSON for better formatting
+  let displayContent = content;
+  let summary = '';
+
+  try {
+    const parsed = JSON.parse(content);
+    displayContent = JSON.stringify(parsed, null, 2);
+
+    // Generate a summary based on the data
+    if (Array.isArray(parsed)) {
+      summary = `${parsed.length} item${parsed.length !== 1 ? 's' : ''} returned`;
+    } else if (typeof parsed === 'object' && parsed !== null) {
+      const keys = Object.keys(parsed);
+      if (parsed.error) {
+        summary = `Error: ${parsed.error}`;
+      } else if (parsed.success !== undefined) {
+        summary = parsed.success ? 'Success' : 'Failed';
+      } else if (keys.length <= 3) {
+        summary = keys.join(', ');
+      } else {
+        summary = `${keys.length} fields`;
+      }
+    }
+  } catch {
+    // Not JSON, use as-is
+    // Check for common patterns
+    if (content.includes('Created agent') || content.includes('✅')) {
+      summary = content.split('\n')[0];
+    } else if (content.length > 100) {
+      summary = content.slice(0, 80) + '...';
+    } else {
+      summary = content;
+    }
+  }
+
+  const formatToolName = (name: string) => {
+    return name.split('_').map(w => w.charAt(0).toUpperCase() + w.slice(1)).join(' ');
+  };
+
+  return (
+    <div className="bg-bg-tertiary rounded-lg overflow-hidden border border-border">
+      <button
+        onClick={() => setExpanded(!expanded)}
+        className="w-full flex items-center justify-between p-2 hover:bg-bg-secondary transition-colors"
+      >
+        <div className="flex items-center gap-2">
+          <svg
+            className={`w-4 h-4 text-text-muted transition-transform ${expanded ? 'rotate-90' : ''}`}
+            fill="none"
+            stroke="currentColor"
+            viewBox="0 0 24 24"
+          >
+            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7" />
+          </svg>
+          <span className="text-xs font-medium text-accent-teal">{formatToolName(toolName)}</span>
+        </div>
+        <span className="text-xs text-text-muted truncate max-w-[200px]">{summary}</span>
+      </button>
+
+      {expanded && (
+        <div className="border-t border-border p-2">
+          <pre className="text-text-secondary text-xs overflow-x-auto whitespace-pre-wrap max-h-60 overflow-y-auto">
+            {displayContent}
+          </pre>
+        </div>
+      )}
     </div>
   );
 }

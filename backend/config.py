@@ -1,6 +1,9 @@
 from pydantic_settings import BaseSettings
 from pathlib import Path
 
+# Project root (backend/../)
+PROJECT_ROOT = Path(__file__).parent.parent
+
 
 class Settings(BaseSettings):
     # Google OAuth
@@ -20,7 +23,7 @@ class Settings(BaseSettings):
     frontend_url: str = "http://localhost:5173"
 
     # Database (v0.0.2)
-    database_path: Path = Path("data/agent_builder.db")
+    database_path: Path = PROJECT_ROOT / "data" / "agent_builder.db"
     debug: bool = False
 
     # Encryption key for credentials (generate with: python -c "from cryptography.fernet import Fernet; print(Fernet.generate_key().decode())")

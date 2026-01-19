@@ -4,7 +4,7 @@ from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel
 
 from backend.domain.entities import MCPServerConfig
-from backend.infrastructure.tools.builtin import BuiltinToolFactory
+from backend.infrastructure.tools.builtin import get_available_tools
 from backend.api.dependencies import get_mcp_repo, get_tool_registry
 
 router = APIRouter(prefix="/tools", tags=["tools"])
@@ -39,7 +39,7 @@ class MCPServerInfo(BaseModel):
 @router.get("/builtin", response_model=dict)
 async def list_builtin_tools():
     """List all available built-in tools by category."""
-    return BuiltinToolFactory.list_available()
+    return get_available_tools()
 
 
 @router.get("/mcp", response_model=list[MCPServerInfo])

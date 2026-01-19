@@ -2,18 +2,26 @@
 
 The Builder Wizard is a special agent that helps users create other agents
 through natural language conversation.
+
+v0.0.3: Conversation state persisted to SQLite. Replaced LangChain with raw Anthropic SDK.
 """
 
+import json
 import uuid
 from datetime import datetime
-from typing import Any
+from pathlib import Path
+from typing import Any, Protocol
 
-from langchain_anthropic import ChatAnthropic
-from langchain_core.tools import tool
-from langchain_core.messages import HumanMessage, AIMessage, ToolMessage
-from pydantic import BaseModel, Field
+import anthropic
+from anthropic import beta_tool
 
 from backend.config import settings
+
+# Load config files
+_CONFIG_DIR = Path(__file__).parent.parent / "config"
+_TOOLS_CATALOG = json.loads((_CONFIG_DIR / "tools.json").read_text())
+_TEMPLATES_CATALOG = json.loads((_CONFIG_DIR / "templates.json").read_text())
+_WIZARD_PROMPT = (_CONFIG_DIR / "wizard_prompt.md").read_text()
 from backend.domain.entities import (
     AgentDefinition,
     ToolConfig,
@@ -24,96 +32,44 @@ from backend.domain.entities import (
 from backend.domain.ports import AgentRepository
 
 
-BUILDER_SYSTEM_PROMPT = """You are an agent builder assistant. You help users create AI agents through conversation.
-
-Your job is to:
-1. Understand what the user wants their agent to do
-2. Ask clarifying questions to gather requirements
-3. Suggest appropriate tools, triggers, and configurations
-4. Use your tools to create the agent when ready
-
-## Available Built-in Tools
-
-### Gmail Tools
-- list_emails: List emails from inbox with filters
-- get_email: Get full email content by ID
-- search_emails: Search emails using Gmail query syntax
-- draft_reply: Create draft reply (requires HITL approval)
-- send_email: Send email (requires HITL approval)
-- label_email: Modify email labels
-
-### Calendar Tools
-- list_events: List calendar events for a date range
-- get_event: Get event details
-- create_event: Create a new calendar event (requires HITL approval)
-
-### Web Tools
-- web_search: Search the web for information
-- fetch_url: Fetch and extract content from a URL
-
-### Notes Tools
-- create_note: Create a new note or document
-- search_notes: Search through existing notes
-- append_note: Append content to an existing note
-
-### Slack Tools
-- send_slack_message: Send a message to a Slack channel (requires HITL approval)
-- list_slack_channels: List available Slack channels
-
-## Available Triggers
-- email_polling: Poll for new emails at an interval
-- webhook: Trigger via HTTP webhook
-- scheduled: Run on a schedule
-
-## HITL (Human-in-the-Loop) Approval
-You can mark tools as requiring human approval before execution. This is recommended for:
-- Actions that send emails or messages
-- Actions that create calendar events
-- Actions that modify or delete data
-- Any potentially destructive operations
-
-## Creating an Agent
-
-When you have gathered enough information, use the create_agent tool with:
-- name: A descriptive name for the agent
-- description: What the agent does
-- system_prompt: Instructions for the agent's behavior
-- tools: List of tools the agent should have access to
-- triggers: Optional triggers to activate the agent
-
-Be conversational and guide users step-by-step. Ask questions to understand:
-- What problem they're trying to solve
-- What actions the agent should take
-- When the agent should be triggered
-- What level of human oversight is needed
-
-Suggest creative agent ideas based on the available tools. Examples:
-- Research assistant: web_search + fetch_url + create_note
-- Newsletter curator: list_emails + search_emails + create_note
-- Meeting prep agent: list_events + get_event + search_emails
-- Daily briefing: list_events + list_emails + send_slack_message"""
+# Message type alias
+Message = dict[str, Any]
 
 
-class ToolSpec(BaseModel):
-    """Specification for a tool to add to an agent."""
-    name: str = Field(description="Tool name (e.g., 'list_emails', 'send_email')")
-    hitl: bool = Field(default=False, description="Whether this tool requires human approval")
+# --- Tool definitions using Anthropic SDK's @beta_tool decorator ---
+# Schema is auto-generated from function signature and docstring
+
+@beta_tool
+def list_available_tools() -> str:
+    """List all available built-in tools that can be added to an agent.
+
+    Returns:
+        JSON object with tools grouped by category.
+    """
+    return json.dumps(_TOOLS_CATALOG, indent=2)
 
 
-class TriggerSpec(BaseModel):
-    """Specification for a trigger to add to an agent."""
-    type: str = Field(description="Trigger type: 'email_polling', 'webhook', or 'scheduled'")
-    enabled: bool = Field(default=False, description="Whether the trigger should be enabled initially")
-    config: dict = Field(default_factory=dict, description="Trigger configuration (e.g., interval_seconds)")
+@beta_tool
+def list_templates() -> str:
+    """List available agent templates that can be cloned as starting points.
+
+    Returns:
+        JSON array of template objects.
+    """
+    return json.dumps(_TEMPLATES_CATALOG, indent=2)
 
 
-class AgentSpec(BaseModel):
-    """Complete specification for creating an agent."""
-    name: str = Field(description="Name of the agent")
-    description: str = Field(description="Brief description of what the agent does")
-    system_prompt: str = Field(description="System prompt with instructions for the agent")
-    tools: list[ToolSpec] = Field(description="List of tools for the agent")
-    triggers: list[TriggerSpec] = Field(default_factory=list, description="Optional triggers")
+# Note: create_agent tool is created per-instance in BuilderWizard.__init__
+# because it needs access to agent_repo
+
+
+class WizardConversationRepositoryProtocol(Protocol):
+    """Protocol for wizard conversation persistence."""
+
+    async def save_message(self, thread_id: str, message: Message) -> str: ...
+    async def load_conversation(self, thread_id: str) -> list[Message]: ...
+    async def clear_conversation(self, thread_id: str) -> None: ...
+    async def exists(self, thread_id: str) -> bool: ...
 
 
 class BuilderWizard:
@@ -121,26 +77,30 @@ class BuilderWizard:
 
     This is a meta-agent that helps users define and create other agents
     through natural language interaction.
+
+    v0.0.3: Conversation state persisted to SQLite. Uses raw Anthropic SDK.
     """
 
-    def __init__(self, agent_repo: AgentRepository):
+    def __init__(
+        self,
+        agent_repo: AgentRepository,
+        conversation_repo: WizardConversationRepositoryProtocol | None = None,
+    ):
         """Initialize the builder wizard.
 
         Args:
             agent_repo: Repository for persisting created agents
+            conversation_repo: Repository for persisting conversation state (v0.0.3)
         """
         self.agent_repo = agent_repo
-        self.model = ChatAnthropic(
-            model="claude-sonnet-4-20250514",
-            api_key=settings.anthropic_api_key,
-        )
-        self.conversation_state: dict[str, list] = {}  # thread_id -> messages
-        self._setup_tools()
+        self.conversation_repo = conversation_repo
+        self.client = anthropic.AsyncAnthropic(api_key=settings.anthropic_api_key)
+        self.model = "claude-sonnet-4-20250514"
+        # In-memory cache, backed by database when conversation_repo is available
+        self._conversation_cache: dict[str, list[Message]] = {}
 
-    def _setup_tools(self):
-        """Set up the builder's tools."""
-
-        @tool
+        # Create create_agent tool with repo access
+        @beta_tool
         async def create_agent(
             name: str,
             description: str,
@@ -148,17 +108,14 @@ class BuilderWizard:
             tool_names: list[str],
             hitl_tool_names: list[str] | None = None,
         ) -> str:
-            """Create an agent from the gathered specification.
-
-            Call this when you have collected all necessary information about
-            the agent the user wants to create.
+            """Create an agent from the gathered specification. Call this when you have enough information.
 
             Args:
-                name: Name of the agent (e.g., "Daily Digest Agent")
+                name: Name of the agent (e.g., Daily Digest Agent)
                 description: Brief description of what the agent does
                 system_prompt: System prompt with instructions for the agent
-                tool_names: List of tool names (e.g., ["list_emails", "get_email"])
-                hitl_tool_names: Optional list of tools requiring human approval
+                tool_names: List of tool names (e.g., list_emails, get_email)
+                hitl_tool_names: Tools requiring human approval
             """
             hitl_tools = set(hitl_tool_names or [])
             tools = [
@@ -171,7 +128,7 @@ class BuilderWizard:
             ]
 
             now = datetime.utcnow()
-            agent = AgentDefinition(
+            agent_def = AgentDefinition(
                 id=str(uuid.uuid4()),
                 name=name,
                 description=description,
@@ -182,64 +139,112 @@ class BuilderWizard:
                 updated_at=now,
             )
 
-            await self.agent_repo.save(agent)
-            return f"✅ Created agent '{name}' with ID: {agent.id}"
+            await agent_repo.save(agent_def)
+            return f"Created agent '{name}' with ID: {agent_def.id}"
 
-        # Bind create_agent to self for access to agent_repo
         self._create_agent = create_agent
+        self._tool_schemas = [
+            create_agent.to_dict(),
+            list_available_tools.to_dict(),
+            list_templates.to_dict(),
+        ]
 
-        @tool
-        def list_available_tools() -> dict:
-            """List all available built-in tools that can be added to an agent.
+    async def _execute_tool(self, name: str, args: dict) -> str:
+        """Execute a tool by name and return result."""
+        if name == "create_agent":
+            return await self._create_agent(**args)
+        elif name == "list_available_tools":
+            return list_available_tools()
+        elif name == "list_templates":
+            return list_templates()
+        else:
+            return f"Unknown tool: {name}"
 
-            Use this to show the user what tools are available.
-            """
-            return {
-                "gmail": [
-                    {"name": "list_emails", "description": "List emails from inbox with filters", "hitl_recommended": False},
-                    {"name": "get_email", "description": "Get full email content by ID", "hitl_recommended": False},
-                    {"name": "search_emails", "description": "Search emails using Gmail query syntax", "hitl_recommended": False},
-                    {"name": "draft_reply", "description": "Create draft reply to an email", "hitl_recommended": True},
-                    {"name": "send_email", "description": "Send an email", "hitl_recommended": True},
-                    {"name": "label_email", "description": "Modify email labels (mark read, archive, etc.)", "hitl_recommended": False},
-                ],
-                "calendar": [
-                    {"name": "list_events", "description": "List calendar events for a date range", "hitl_recommended": False},
-                    {"name": "get_event", "description": "Get calendar event details", "hitl_recommended": False},
-                    {"name": "create_event", "description": "Create a new calendar event", "hitl_recommended": True},
-                ],
-                "web": [
-                    {"name": "web_search", "description": "Search the web for information", "hitl_recommended": False},
-                    {"name": "fetch_url", "description": "Fetch and extract content from a URL", "hitl_recommended": False},
-                ],
-                "notes": [
-                    {"name": "create_note", "description": "Create a new note or document", "hitl_recommended": False},
-                    {"name": "search_notes", "description": "Search through existing notes", "hitl_recommended": False},
-                    {"name": "append_note", "description": "Append content to an existing note", "hitl_recommended": False},
-                ],
-                "slack": [
-                    {"name": "send_slack_message", "description": "Send a message to a Slack channel", "hitl_recommended": True},
-                    {"name": "list_slack_channels", "description": "List available Slack channels", "hitl_recommended": False},
-                ],
-            }
+    async def _get_conversation(self, thread_id: str) -> list[Message]:
+        """Get conversation messages, loading from database if needed."""
+        if thread_id not in self._conversation_cache:
+            if self.conversation_repo:
+                self._conversation_cache[thread_id] = await self.conversation_repo.load_conversation(thread_id)
+            else:
+                self._conversation_cache[thread_id] = []
+        return self._conversation_cache[thread_id]
 
-        @tool
-        def list_templates() -> list[dict]:
-            """List available agent templates that can be cloned.
+    async def _add_message(self, thread_id: str, message: Message) -> None:
+        """Add message to conversation, persisting to database."""
+        conversation = await self._get_conversation(thread_id)
+        conversation.append(message)
 
-            Use this to suggest templates to users who want a starting point.
-            """
-            return [
-                {
-                    "id": "email_assistant_template",
-                    "name": "Email Assistant",
-                    "description": "An intelligent email assistant that triages emails, drafts responses, and integrates with calendar.",
-                    "tools": ["list_emails", "get_email", "search_emails", "draft_reply", "send_email", "label_email"],
-                    "triggers": ["email_polling"],
-                },
-            ]
+        if self.conversation_repo:
+            await self.conversation_repo.save_message(thread_id, message)
 
-        self.tools = [self._create_agent, list_available_tools, list_templates]
+    def _build_messages(self, conversation: list[Message]) -> list[dict]:
+        """Build messages list for Anthropic API from conversation history."""
+        messages = []
+        for msg in conversation:
+            role = msg["role"]
+            content = msg.get("content", "")
+
+            if role == "user":
+                messages.append({"role": "user", "content": content})
+            elif role == "assistant":
+                # Handle assistant messages with potential tool_use blocks
+                if "tool_calls" in msg and msg["tool_calls"]:
+                    # Build content with text and tool_use blocks
+                    content_blocks = []
+                    if content:
+                        content_blocks.append({"type": "text", "text": content})
+                    for tc in msg["tool_calls"]:
+                        content_blocks.append({
+                            "type": "tool_use",
+                            "id": tc["id"],
+                            "name": tc["name"],
+                            "input": tc["args"],
+                        })
+                    messages.append({"role": "assistant", "content": content_blocks})
+                else:
+                    messages.append({"role": "assistant", "content": content})
+            elif role == "tool":
+                # Tool results need to be in a user message with tool_result blocks
+                messages.append({
+                    "role": "user",
+                    "content": [{
+                        "type": "tool_result",
+                        "tool_use_id": msg["tool_call_id"],
+                        "content": content,
+                    }]
+                })
+
+        return messages
+
+    def _extract_text(self, content: list | str) -> str:
+        """Extract text from response content."""
+        if isinstance(content, str):
+            return content
+        text_parts = []
+        for block in content:
+            if hasattr(block, "text"):
+                text_parts.append(block.text)
+            elif isinstance(block, dict) and block.get("type") == "text":
+                text_parts.append(block.get("text", ""))
+        return "".join(text_parts)
+
+    def _extract_tool_calls(self, content: list) -> list[dict]:
+        """Extract tool calls from response content."""
+        tool_calls = []
+        for block in content:
+            if hasattr(block, "type") and block.type == "tool_use":
+                tool_calls.append({
+                    "id": block.id,
+                    "name": block.name,
+                    "args": block.input,
+                })
+            elif isinstance(block, dict) and block.get("type") == "tool_use":
+                tool_calls.append({
+                    "id": block["id"],
+                    "name": block["name"],
+                    "args": block["input"],
+                })
+        return tool_calls
 
     async def chat(self, thread_id: str, user_message: str) -> str:
         """Process user message and return wizard response.
@@ -251,59 +256,58 @@ class BuilderWizard:
         Returns:
             Assistant's response
         """
-        if thread_id not in self.conversation_state:
-            self.conversation_state[thread_id] = []
-
         # Add user message to history
-        self.conversation_state[thread_id].append(HumanMessage(content=user_message))
+        await self._add_message(thread_id, {"role": "user", "content": user_message})
 
-        # Build messages for model
-        messages = [
-            {"role": "system", "content": BUILDER_SYSTEM_PROMPT},
-            *[self._message_to_dict(m) for m in self.conversation_state[thread_id]]
-        ]
+        # Build messages for API
+        conversation = await self._get_conversation(thread_id)
+        messages = self._build_messages(conversation)
 
         # Get model response
-        response = await self.model.bind_tools(self.tools).ainvoke(messages)
+        response = await self.client.messages.create(
+            model=self.model,
+            max_tokens=4096,
+            system=_WIZARD_PROMPT,
+            tools=self._tool_schemas,
+            messages=messages,
+        )
 
         # Handle tool calls
-        if response.tool_calls:
-            # Add the AI response with tool_calls to history BEFORE tool results
-            self.conversation_state[thread_id].append(response)
+        if response.stop_reason == "tool_use":
+            tool_calls = self._extract_tool_calls(response.content)
+            text_content = self._extract_text(response.content)
 
-            for tool_call in response.tool_calls:
-                # Find and execute tool
-                tool_fn = next((t for t in self.tools if t.name == tool_call["name"]), None)
-                if tool_fn:
-                    try:
-                        # Check if tool is async
-                        if tool_call["name"] == "create_agent":
-                            result = await tool_fn.ainvoke(tool_call["args"])
-                        else:
-                            result = tool_fn.invoke(tool_call["args"])
-                    except Exception as e:
-                        result = f"Error: {str(e)}"
+            # Add assistant message with tool calls
+            await self._add_message(thread_id, {
+                "role": "assistant",
+                "content": text_content,
+                "tool_calls": tool_calls,
+            })
 
-                    # Add tool message to history
-                    self.conversation_state[thread_id].append(
-                        ToolMessage(
-                            content=str(result),
-                            tool_call_id=tool_call["id"],
-                        )
-                    )
+            # Execute tools and add results
+            for tc in tool_calls:
+                result = await self._execute_tool(tc["name"], tc["args"])
+                await self._add_message(thread_id, {
+                    "role": "tool",
+                    "content": result,
+                    "tool_call_id": tc["id"],
+                })
 
-            # Get follow-up response after tool execution
-            messages = [
-                {"role": "system", "content": BUILDER_SYSTEM_PROMPT},
-                *[self._message_to_dict(m) for m in self.conversation_state[thread_id]]
-            ]
-            response = await self.model.ainvoke(messages)
+            # Get follow-up response
+            conversation = await self._get_conversation(thread_id)
+            messages = self._build_messages(conversation)
+            response = await self.client.messages.create(
+                model=self.model,
+                max_tokens=4096,
+                system=_WIZARD_PROMPT,
+                messages=messages,
+            )
 
-        # Add assistant response to history
-        self.conversation_state[thread_id].append(AIMessage(content=response.content))
+        # Extract and save response
+        content = self._extract_text(response.content)
+        await self._add_message(thread_id, {"role": "assistant", "content": content})
 
-        # Extract text content
-        return self._extract_content(response.content)
+        return content
 
     async def stream_chat(self, thread_id: str, user_message: str):
         """Stream chat response for real-time UI updates.
@@ -315,110 +319,71 @@ class BuilderWizard:
         Yields:
             Chunks of the response
         """
-        if thread_id not in self.conversation_state:
-            self.conversation_state[thread_id] = []
+        await self._add_message(thread_id, {"role": "user", "content": user_message})
 
-        self.conversation_state[thread_id].append(HumanMessage(content=user_message))
+        conversation = await self._get_conversation(thread_id)
+        messages = self._build_messages(conversation)
 
-        messages = [
-            {"role": "system", "content": BUILDER_SYSTEM_PROMPT},
-            *[self._message_to_dict(m) for m in self.conversation_state[thread_id]]
-        ]
+        # First call - check for tool use (can't stream tool calls reliably)
+        response = await self.client.messages.create(
+            model=self.model,
+            max_tokens=4096,
+            system=_WIZARD_PROMPT,
+            tools=self._tool_schemas,
+            messages=messages,
+        )
 
-        # Use ainvoke for initial response (streaming breaks tool call args)
-        response = await self.model.bind_tools(self.tools).ainvoke(messages)
+        if response.stop_reason == "tool_use":
+            tool_calls = self._extract_tool_calls(response.content)
+            text_content = self._extract_text(response.content)
 
-        # Handle tool calls if present
-        if hasattr(response, "tool_calls") and response.tool_calls:
-            # Add the AI response with tool_calls to history BEFORE tool results
-            self.conversation_state[thread_id].append(response)
+            # Add assistant message with tool calls
+            await self._add_message(thread_id, {
+                "role": "assistant",
+                "content": text_content,
+                "tool_calls": tool_calls,
+            })
 
-            for tool_call in response.tool_calls:
-                yield {"type": "tool_call", "name": tool_call["name"], "args": tool_call["args"]}
+            # Execute tools and yield results
+            for tc in tool_calls:
+                yield {"type": "tool_call", "name": tc["name"], "args": tc["args"]}
 
-                tool_fn = next((t for t in self.tools if t.name == tool_call["name"]), None)
-                if tool_fn:
-                    try:
-                        if tool_call["name"] == "create_agent":
-                            result = await tool_fn.ainvoke(tool_call["args"])
-                        else:
-                            result = tool_fn.invoke(tool_call["args"])
-                    except Exception as e:
-                        result = f"Error: {str(e)}"
+                result = await self._execute_tool(tc["name"], tc["args"])
+                yield {"type": "tool_result", "name": tc["name"], "result": result}
 
-                    yield {"type": "tool_result", "name": tool_call["name"], "result": result}
+                await self._add_message(thread_id, {
+                    "role": "tool",
+                    "content": result,
+                    "tool_call_id": tc["id"],
+                })
 
-                    self.conversation_state[thread_id].append(
-                        ToolMessage(content=str(result), tool_call_id=tool_call["id"])
-                    )
+            # Stream follow-up response
+            conversation = await self._get_conversation(thread_id)
+            messages = self._build_messages(conversation)
 
-            # Stream follow-up response after tool execution
-            messages = [
-                {"role": "system", "content": BUILDER_SYSTEM_PROMPT},
-                *[self._message_to_dict(m) for m in self.conversation_state[thread_id]]
-            ]
             full_content = ""
-            async for chunk in self.model.astream(messages):
-                chunk_text = self._extract_content(chunk.content)
-                if chunk_text:
-                    full_content += chunk_text
-                    yield {"type": "token", "content": chunk_text}
+            async with self.client.messages.stream(
+                model=self.model,
+                max_tokens=4096,
+                system=_WIZARD_PROMPT,
+                messages=messages,
+            ) as stream:
+                async for text in stream.text_stream:
+                    full_content += text
+                    yield {"type": "token", "content": text}
 
-            # Always append AIMessage to maintain conversation history
-            self.conversation_state[thread_id].append(AIMessage(content=full_content))
+            await self._add_message(thread_id, {"role": "assistant", "content": full_content})
         else:
-            # No tool calls - yield the complete response
-            content = self._extract_content(response.content)
+            # No tool calls - yield the response
+            content = self._extract_text(response.content)
             if content:
                 yield {"type": "token", "content": content}
-            # Always append AIMessage to maintain conversation history
-            self.conversation_state[thread_id].append(AIMessage(content=content or ""))
+            await self._add_message(thread_id, {"role": "assistant", "content": content or ""})
 
         yield {"type": "complete"}
 
-    def _message_to_dict(self, msg: Any) -> dict:
-        """Convert a LangChain message to dict format."""
-        if isinstance(msg, HumanMessage):
-            return {"role": "user", "content": msg.content}
-        elif isinstance(msg, AIMessage):
-            result = {"role": "assistant", "content": msg.content or ""}
-            # Include tool_calls if present (required for proper message sequencing)
-            if hasattr(msg, "tool_calls") and msg.tool_calls:
-                import json
-                result["tool_calls"] = [
-                    {
-                        "id": tc["id"],
-                        "type": "function",
-                        "function": {
-                            "name": tc["name"],
-                            "arguments": json.dumps(tc["args"]) if isinstance(tc["args"], dict) else tc["args"],
-                        },
-                    }
-                    for tc in msg.tool_calls
-                ]
-            return result
-        elif isinstance(msg, ToolMessage):
-            return {"role": "tool", "content": msg.content, "tool_call_id": msg.tool_call_id}
-        return {"role": "user", "content": str(msg)}
-
-    def _extract_content(self, content: Any) -> str:
-        """Extract text content from various formats."""
-        if isinstance(content, list):
-            parts = []
-            for block in content:
-                if hasattr(block, "text"):
-                    parts.append(block.text)
-                elif isinstance(block, dict) and "text" in block:
-                    parts.append(block["text"])
-            return "".join(parts)
-        elif isinstance(content, str):
-            return content
-        return str(content)
-
-    def clear_conversation(self, thread_id: str):
-        """Clear conversation history for a thread.
-
-        Args:
-            thread_id: Thread to clear
-        """
-        self.conversation_state.pop(thread_id, None)
+    async def clear_conversation(self, thread_id: str):
+        """Clear conversation history for a thread."""
+        self._conversation_cache.pop(thread_id, None)
+        if self.conversation_repo:
+            await self.conversation_repo.clear_conversation(thread_id)
