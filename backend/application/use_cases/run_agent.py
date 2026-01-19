@@ -239,6 +239,8 @@ class RunAgentUseCase:
                     for tc in msg.tool_calls:
                         if tc["id"] == tool_call_id:
                             tc["args"] = edited_args
+                            # Persist the modified message to checkpoint
+                            agent.update_state(config, {"messages": [msg]})
                             break
 
             async for event in agent.astream_events(None, config, version="v2"):
