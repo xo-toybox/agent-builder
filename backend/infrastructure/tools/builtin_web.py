@@ -7,8 +7,11 @@ import os
 from langchain_core.tools import tool
 
 
-def create_web_tools() -> list:
+def create_web_tools(tavily_api_key: str | None = None) -> list:
     """Create web search tools.
+
+    Args:
+        tavily_api_key: Tavily API key from settings (optional, falls back to env var)
 
     Returns:
         List of web-related tools
@@ -31,8 +34,8 @@ def create_web_tools() -> list:
         # Clamp max_results to safe range to prevent runaway API usage
         max_results = max(1, min(max_results, 10))
 
-        # Check for Tavily API key (preferred search API)
-        tavily_key = os.getenv("TAVILY_API_KEY")
+        # Check for Tavily API key (credential_store first, then env var)
+        tavily_key = tavily_api_key or os.getenv("TAVILY_API_KEY")
         if tavily_key:
             return _tavily_search(query, max_results, tavily_key)
 
@@ -43,10 +46,10 @@ def create_web_tools() -> list:
 
         # No API key configured - return helpful message
         return (
-            "Web search is not configured. To enable web search, add one of these "
-            "environment variables:\n"
-            "- TAVILY_API_KEY (recommended): Get from https://tavily.com\n"
-            "- SERPAPI_KEY: Get from https://serpapi.com"
+            "Web search is not configured. To enable web search:\n"
+            "1. Go to Settings in the UI and add your Tavily API key, or\n"
+            "2. Set TAVILY_API_KEY environment variable\n"
+            "Get a key from: https://tavily.com"
         )
 
     return [web_search]

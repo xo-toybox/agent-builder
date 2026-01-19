@@ -327,6 +327,15 @@ async def _handle_memory_decision(
     edited_content = message.get("edited_content")
     tool_call_id = message.get("tool_call_id")
 
+    # Validate decision field
+    VALID_DECISIONS = {"approve", "reject", "edit"}
+    if decision not in VALID_DECISIONS:
+        await websocket.send_json({
+            "type": "error",
+            "message": f"Invalid decision '{decision}'. Must be one of: {', '.join(VALID_DECISIONS)}"
+        })
+        return
+
     try:
         # Get the edit request
         edit_request = await memory_edit_repo.get(request_id)

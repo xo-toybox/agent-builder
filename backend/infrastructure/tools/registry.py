@@ -68,19 +68,30 @@ class ToolRegistryImpl:
         """
         tools = []
 
-        # v0.0.3: Always add memory tools if memory_fs is available
-        if self.memory_fs is not None and agent_id is not None:
+        # v0.0.3: Add memory tools only if enabled in configs
+        MEMORY_TOOL_NAMES = {"write_memory", "read_memory", "list_memory"}
+        enabled_memory_tools = {
+            c.name for c in configs
+            if c.enabled and c.source == ToolSource.BUILTIN and c.name in MEMORY_TOOL_NAMES
+        }
+        if self.memory_fs is not None and agent_id is not None and enabled_memory_tools:
             memory_tools = create_memory_tools(
                 self.memory_fs, agent_id, memory_approval_required
             )
-            tools.extend(memory_tools)
+            # Only include enabled memory tools
+            tools.extend([t for t in memory_tools if t.name in enabled_memory_tools])
 
         # v0.0.3: Check for Slack credentials and add Slack tools
         slack_token = None
+        tavily_api_key = None
         if self.credential_store:
             slack_creds = await self.credential_store.get("slack")
             if slack_creds:
                 slack_token = slack_creds.get("token")
+            # Check global_settings for Tavily API key
+            global_settings = await self.credential_store.get("global_settings")
+            if global_settings:
+                tavily_api_key = global_settings.get("tavily_api_key")
 
         # Build tool pools by category (lazy, only if needed)
         tool_pools: dict[str, list[Any]] = {}
@@ -91,7 +102,7 @@ class ToolRegistryImpl:
             if category == "slack" and slack_token:
                 tool_pools[category] = create_slack_tools(slack_token)
             elif category == "web":
-                tool_pools[category] = create_web_tools()
+                tool_pools[category] = create_web_tools(tavily_api_key)
             elif category in ("gmail", "calendar") and credentials:
                 # Use stable cache key based on credentials (refresh_token or token)
                 cache_key = credentials.refresh_token or credentials.token

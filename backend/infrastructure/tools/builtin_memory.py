@@ -56,6 +56,13 @@ def create_memory_tools(
         if not is_valid:
             return f"Error: {error_msg}"
 
+        # Check if content was already written by HITL approval flow
+        # This handles the case where LangGraph re-executes the tool post-approval
+        existing = await memory_fs.read_safe(agent_id, path)
+        if existing is not None:
+            # Content exists - HITL approval already saved it
+            return f"Memory saved to '{path}'."
+
         # The actual write is handled by HITL flow in chat.py
         # This tool just signals intent and returns a pending message
         return f"Memory update proposed at '{path}'. Waiting for user approval."
