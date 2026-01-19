@@ -178,16 +178,19 @@ async def update_skill(
                     detail=f"Skill with name '{normalized_name}' already exists",
                 )
 
-    skill = await skill_repo.update(
-        skill_id=skill_id,
-        name=data.name,
-        description=data.description,
-        instructions=data.instructions,
-        license=data.license,
-        compatibility=data.compatibility,
-        metadata=data.metadata,
-        allowed_tools=data.allowed_tools,
-    )
+    try:
+        skill = await skill_repo.update(
+            skill_id=skill_id,
+            name=data.name,
+            description=data.description,
+            instructions=data.instructions,
+            license=data.license,
+            compatibility=data.compatibility,
+            metadata=data.metadata,
+            allowed_tools=data.allowed_tools,
+        )
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e))
 
     return _skill_to_response(skill)
 

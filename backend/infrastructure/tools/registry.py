@@ -93,13 +93,19 @@ class ToolRegistryImpl:
             elif category == "web":
                 tool_pools[category] = create_web_tools()
             elif category in ("gmail", "calendar") and credentials:
-                cache_key = id(credentials)
-                if cache_key not in self._google_tools_cache:
-                    self._google_tools_cache[cache_key] = (
-                        create_gmail_tools(credentials) + create_calendar_tools(credentials)
-                    )
-                tool_pools["gmail"] = [t for t in self._google_tools_cache[cache_key] if get_tool_category(t.name) == "gmail"]
-                tool_pools["calendar"] = [t for t in self._google_tools_cache[cache_key] if get_tool_category(t.name) == "calendar"]
+                # Use stable cache key based on credentials (refresh_token or token)
+                cache_key = credentials.refresh_token or credentials.token
+                if cache_key:
+                    if cache_key not in self._google_tools_cache:
+                        self._google_tools_cache[cache_key] = (
+                            create_gmail_tools(credentials) + create_calendar_tools(credentials)
+                        )
+                    cached = self._google_tools_cache[cache_key]
+                else:
+                    # No stable key available; create without caching
+                    cached = create_gmail_tools(credentials) + create_calendar_tools(credentials)
+                tool_pools["gmail"] = [t for t in cached if get_tool_category(t.name) == "gmail"]
+                tool_pools["calendar"] = [t for t in cached if get_tool_category(t.name) == "calendar"]
             return tool_pools.get(category, [])
 
         for config in configs:

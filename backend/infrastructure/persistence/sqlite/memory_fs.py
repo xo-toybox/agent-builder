@@ -84,6 +84,14 @@ class MemoryFileSystem:
         Returns:
             True if path is valid and safe
         """
+        # Check agent scope if path has /agents/{id}/ prefix
+        raw = path.lstrip("/")
+        if raw.startswith("agents/"):
+            parts = raw.split("/", 2)
+            # Must have at least agents/{id}/... and id must match
+            if len(parts) < 3 or parts[1] != agent_id:
+                return False
+
         # Normalize the path
         normalized = self._normalize_path(path)
 

@@ -28,6 +28,9 @@ def create_web_tools() -> list:
         Returns:
             Search results with titles, snippets, and URLs
         """
+        # Clamp max_results to safe range to prevent runaway API usage
+        max_results = max(1, min(max_results, 10))
+
         # Check for Tavily API key (preferred search API)
         tavily_key = os.getenv("TAVILY_API_KEY")
         if tavily_key:

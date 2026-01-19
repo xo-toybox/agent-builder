@@ -161,10 +161,10 @@ api/v1/chat.py:agent_chat()
 ### Tool Registration Architecture
 
 ```
-ToolRegistryImpl.create_tools(configs, credentials, agent_id)
+ToolRegistryImpl.create_tools(configs, credentials, agent_id, memory_approval_required)
     │
     ├─ Memory tools (always):
-    │   └─ create_memory_tools(memory_fs, agent_id)
+    │   └─ create_memory_tools(memory_fs, agent_id, memory_approval_required)
     │
     ├─ Gmail tools (if credentials):
     │   └─ create_gmail_tools(credentials)

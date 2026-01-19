@@ -70,7 +70,10 @@ export function SlackConfigPanel({ onConfigured }: SlackConfigPanelProps) {
     if (!confirm('Are you sure you want to remove the Slack configuration?')) return;
 
     try {
-      await fetch('/api/v1/credentials/slack', { method: 'DELETE' });
+      const response = await fetch('/api/v1/credentials/slack', { method: 'DELETE' });
+      if (!response.ok) {
+        throw new Error('Failed to remove token');
+      }
       setIsConfigured(false);
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Failed to remove token');

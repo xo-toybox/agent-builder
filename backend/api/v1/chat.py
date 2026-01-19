@@ -362,8 +362,8 @@ async def _handle_memory_decision(
         path = memory_fs._normalize_path(path)
 
         if decision == "approve":
-            # Write to memory
-            content = edited_content or edit_request["proposed_content"]
+            # Write to memory (use edited_content if provided, even if empty string)
+            content = edited_content if edited_content is not None else edit_request["proposed_content"]
 
             # Security: Always validate content size (both edited and original proposed content)
             is_valid, error_msg = memory_fs.validate_content_size(content)
@@ -400,29 +400,35 @@ async def _handle_memory_decision(
 
         elif decision == "edit":
             # Update with edited content and approve
-            if edited_content:
-                # Security: Validate edited content size
-                is_valid, error_msg = memory_fs.validate_content_size(edited_content)
-                if not is_valid:
-                    await websocket.send_json({
-                        "type": "error",
-                        "message": error_msg
-                    })
-                    return
-
-                await memory_repo.save(
-                    agent_id=agent_id,
-                    path=path,
-                    content=edited_content,
-                    previous_content=edit_request["previous_content"],
-                )
-                await memory_edit_repo.resolve(request_id, "approved", edited_content)
+            if edited_content is None:
                 await websocket.send_json({
-                    "type": "memory_edit_complete",
-                    "request_id": request_id,
-                    "success": True,
-                    "path": path,
+                    "type": "error",
+                    "message": "edited_content is required for edit decision"
                 })
+                return
+
+            # Security: Validate edited content size
+            is_valid, error_msg = memory_fs.validate_content_size(edited_content)
+            if not is_valid:
+                await websocket.send_json({
+                    "type": "error",
+                    "message": error_msg
+                })
+                return
+
+            await memory_repo.save(
+                agent_id=agent_id,
+                path=path,
+                content=edited_content,
+                previous_content=edit_request["previous_content"],
+            )
+            await memory_edit_repo.resolve(request_id, "approved", edited_content)
+            await websocket.send_json({
+                "type": "memory_edit_complete",
+                "request_id": request_id,
+                "success": True,
+                "path": path,
+            })
 
         # Resume agent if we have a tool_call_id
         if tool_call_id:

@@ -77,7 +77,7 @@ Popular options:
 ```python
 # my_server.py
 from mcp.server import Server
-from mcp.types import Tool, TextContent
+from mcp.types import Tool, TextContent, CallToolResult
 
 server = Server("my-server")
 
@@ -100,7 +100,9 @@ async def list_tools():
 @server.call_tool()
 async def call_tool(name: str, arguments: dict):
     if name == "my_custom_tool":
-        return [TextContent(type="text", text=f"Result: {arguments['input']}")]
+        return CallToolResult(
+            content=[TextContent(type="text", text=f"Result: {arguments['input']}")]
+        )
 
 if __name__ == "__main__":
     import asyncio

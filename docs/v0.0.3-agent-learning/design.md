@@ -387,10 +387,14 @@ Memory tools are registered as builtin tools, always available to all agents:
 ```python
 # backend/infrastructure/tools/builtin_memory.py
 
-def create_memory_tools(memory_fs: MemoryFileSystem, agent_id: str) -> list:
+def create_memory_tools(
+    memory_fs: MemoryFileSystem,
+    agent_id: str,
+    memory_approval_required: bool = True,
+) -> list:
     """Create memory tools for an agent."""
 
-    @tool(requires_approval=True)
+    @tool
     def write_memory(path: str, content: str, reason: str) -> str:
         """
         Propose saving information to agent memory for user approval.
@@ -681,11 +685,14 @@ class ToolRegistryImpl:
     def __init__(self, memory_fs: MemoryFileSystem):
         self.memory_fs = memory_fs
 
-    def create_tools(self, agent_id: str, configs: list[ToolConfig], credentials: dict) -> list:
+    def create_tools(
+        self, agent_id: str, configs: list[ToolConfig], credentials: dict,
+        memory_approval_required: bool = True
+    ) -> list:
         tools = []
 
-        # Always add memory tools
-        tools.extend(create_memory_tools(self.memory_fs, agent_id))
+        # Always add memory tools (with configurable HITL)
+        tools.extend(create_memory_tools(self.memory_fs, agent_id, memory_approval_required))
 
         # Add configured tools
         for config in configs:
